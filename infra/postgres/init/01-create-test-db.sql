@@ -1,0 +1,1 @@
+CREATE DATABASE aion_test;

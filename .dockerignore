@@ -1,0 +1,13 @@
+.git
+.github
+.fallow
+node_modules
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+logs
+exports
+.DS_Store
+*.log
+apps/api/.env
+deploy/env/*.env

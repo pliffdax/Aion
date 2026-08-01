@@ -1,0 +1,22 @@
+enum TelegramLocale {
+  RU
+  UK
+  EN
+}
+
+enum TelegramReminderStatus {
+  PENDING
+  PROCESSING
+  SENT
+  CANCELLED
+  FAILED
+}
+
+enum TelegramReminderRepeatType {
+  NONE
+  INTERVAL
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+}

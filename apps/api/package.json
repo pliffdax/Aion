@@ -1,0 +1,52 @@
+{
+  "name": "@aion/api",
+  "version": "0.0.1",
+  "private": true,
+  "prisma": {
+    "schema": "prisma/schema"
+  },
+  "scripts": {
+    "dev": "nest start --watch",
+    "dev:test": "MODE=test PORT=3001 nest start --watch",
+    "build": "nest build -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "start:prod": "node dist/main.js",
+    "lint": "eslint .",
+    "format": "prettier . --write --ignore-path ../../.prettierignore",
+    "format:check": "prettier . --check --ignore-path ../../.prettierignore",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "jest",
+    "db:generate": "prisma generate --schema prisma/schema",
+    "db:format": "prisma format --schema prisma/schema",
+    "db:migrate:dev": "prisma migrate dev --schema prisma/schema",
+    "db:migrate:dev:test": "MODE=test prisma migrate dev --schema prisma/schema",
+    "db:migrate:deploy": "prisma migrate deploy --schema prisma/schema",
+    "db:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@aion/contracts": "workspace:*",
+    "@nestjs/common": "^11.0.1",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.0.1",
+    "@nestjs/platform-fastify": "^11.1.9",
+    "@prisma/adapter-pg": "^7.2.0",
+    "@prisma/client": "^7.3.0",
+    "dotenv": "^16.4.5",
+    "fastify": "^5.6.2",
+    "pg": "^8.13.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.0",
+    "@nestjs/schematics": "^11.0.0",
+    "@nestjs/testing": "^11.0.1",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.16.0",
+    "@types/supertest": "^6.0.3",
+    "prisma": "^7.3.0",
+    "supertest": "^7.1.4"
+  }
+}

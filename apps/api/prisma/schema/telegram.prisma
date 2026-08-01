@@ -1,0 +1,85 @@
+model TelegramUser {
+  id         String         @id @default(cuid())
+  telegramId BigInt         @unique
+  username   String?        @db.VarChar(32)
+  firstName  String?        @db.VarChar(64)
+  locale     TelegramLocale @default(RU)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  dailyPlans DailyPlan[]
+  reminders  TelegramReminder[]
+
+  @@index([locale])
+}
+
+model TelegramReminder {
+  id                    String                     @id @default(cuid())
+  userId                String
+  chatId                BigInt
+  text                  String                     @db.VarChar(1000)
+  remindAt              DateTime                   @db.Timestamptz(3)
+  availableAt           DateTime                   @db.Timestamptz(3)
+  timezone              String                     @db.VarChar(64)
+  status                TelegramReminderStatus     @default(PENDING)
+  repeatType            TelegramReminderRepeatType @default(NONE)
+  repeatIntervalMinutes Int?
+  repeatLimit           Int?
+  sentCount             Int                        @default(0)
+  recurrenceAnchorAt    DateTime                   @db.Timestamptz(3)
+  deliveryToken         String?                    @unique @db.VarChar(36)
+  claimedAt             DateTime?                  @db.Timestamptz(3)
+  sentAt                DateTime?                  @db.Timestamptz(3)
+  attemptCount          Int                        @default(0)
+  lastError             String?                    @db.VarChar(500)
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+
+  user TelegramUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, remindAt])
+  @@index([status, availableAt])
+  @@index([claimedAt])
+}
+
+model DailyPlan {
+  id                   String    @id @default(cuid())
+  userId               String
+  planDate             DateTime  @db.Date
+  finalizedAt          DateTime? @db.Timestamptz(3)
+  rolloverCompletedAt  DateTime? @db.Timestamptz(3)
+  rolloverToken        String?   @unique @db.VarChar(36)
+  rolloverClaimedAt    DateTime? @db.Timestamptz(3)
+  rolloverAttemptCount Int       @default(0)
+  rolloverLastError    String?   @db.VarChar(500)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user  TelegramUser    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items DailyPlanItem[]
+
+  @@unique([userId, planDate])
+  @@index([userId])
+  @@index([planDate])
+}
+
+model DailyPlanItem {
+  id                String   @id @default(cuid())
+  dailyPlanId       String
+  carriedFromItemId String?
+  text              String   @db.VarChar(160)
+  completed         Boolean  @default(false)
+  position          Int
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  dailyPlan       DailyPlan       @relation(fields: [dailyPlanId], references: [id], onDelete: Cascade)
+  carriedFromItem DailyPlanItem?  @relation("DailyPlanItemCarry", fields: [carriedFromItemId], references: [id], onDelete: SetNull)
+  carriedItems    DailyPlanItem[] @relation("DailyPlanItemCarry")
+
+  @@unique([dailyPlanId, carriedFromItemId])
+  @@index([dailyPlanId])
+  @@index([dailyPlanId, position])
+  @@index([dailyPlanId, completed])
+  @@index([carriedFromItemId])
+}

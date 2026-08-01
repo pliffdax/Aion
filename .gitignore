@@ -1,0 +1,30 @@
+# deps / build
+node_modules
+dist
+coverage
+generated
+*.tsbuildinfo
+
+# env
+.env
+.env.*
+!.env.example
+
+# logs
+summaries
+!docs/archive/summaries/
+!docs/archive/summaries/**
+logs
+*.log
+
+# OS / IDE
+.DS_Store
+**/.DS_Store
+._*
+**/._*
+.vscode
+.vscode-test
+
+# lockfiles (оставляем pnpm-lock.yaml в git!)
+package-lock.json
+yarn.lock

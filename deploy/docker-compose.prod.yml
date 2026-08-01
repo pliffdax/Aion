@@ -1,0 +1,54 @@
+name: ${AION_COMPOSE_PROJECT:-aion}
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aion
+      POSTGRES_PASSWORD: ${AION_POSTGRES_PASSWORD:?AION_POSTGRES_PASSWORD is required}
+      POSTGRES_DB: aion
+    ports:
+      - '127.0.0.1:${AION_POSTGRES_HOST_PORT:-5442}:5432'
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U aion -d aion']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    image: ghcr.io/pliffdax/aion-api:${AION_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - ${AION_SHARED_DIR:-/srv/aion/shared}/api.env
+    ports:
+      - '127.0.0.1:${AION_API_HOST_PORT:-3010}:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  telegram-bot:
+    image: ghcr.io/pliffdax/aion-telegram-bot:${AION_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - ${AION_SHARED_DIR:-/srv/aion/shared}/telegram-bot.env
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pg_data:
+    name: ${AION_PG_VOLUME:-aion_pg}

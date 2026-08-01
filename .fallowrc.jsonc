@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/config-schema.json",
+  "entry": [
+    "apps/api/src/main.ts",
+    "apps/bot/src/bot.ts",
+    "apps/telegram-bot/src/index.ts",
+    "packages/contracts/src/index.ts",
+    "packages/contracts/src/v1/index.ts",
+  ],
+  "ignorePatterns": [
+    "apps/**/dist/**",
+    "packages/**/dist/**",
+    "apps/api/src/generated/**",
+    "apps/bot/legacy/**",
+    "docs/archive/**",
+  ],
+  "dynamicallyLoaded": [
+    "apps/bot/src/events/**/index.ts",
+    "apps/bot/src/commands/**/index.ts",
+    "apps/bot/src/features/**/commands/**/index.ts",
+    "apps/bot/src/components/**/index.ts",
+    "apps/bot/src/features/**/components/**/index.ts",
+    "apps/telegram-bot/src/features/**/*.command.ts",
+  ],
+  "duplicates": {
+    "ignore": [
+      "apps/**/dist/**",
+      "packages/**/dist/**",
+      "apps/api/src/generated/**",
+      "apps/bot/legacy/**",
+      "docs/archive/**",
+    ],
+    "ignoreImports": true,
+  },
+  "ignoreDependencies": ["@aia/contracts", "@nestjs/schematics"],
+  "audit": {
+    "gate": "new-only",
+  },
+}

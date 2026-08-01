@@ -1,0 +1,28 @@
+{
+  "name": "@aion/telegram-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal planning, reports, and reminders in Telegram",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "rimraf dist tsconfig.tsbuildinfo && tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "dev:test": "MODE=test tsx watch src/index.ts",
+    "lint": "eslint .",
+    "format": "prettier . --write --ignore-path ../../.prettierignore",
+    "format:check": "prettier . --check --ignore-path ../../.prettierignore",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@aion/contracts": "workspace:*",
+    "dotenv": "16.4.5",
+    "grammy": "^1.37.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.20.3"
+  }
+}
