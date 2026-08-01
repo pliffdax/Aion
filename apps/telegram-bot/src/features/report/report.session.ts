@@ -27,7 +27,8 @@ export interface MessageReference {
 }
 
 export interface ReportSession {
-  ownerId: number;
+  userId: number;
+  authorTag: string;
   type: ReportType | null;
   step: ReportStep;
   collector: MessageReference;
@@ -39,12 +40,14 @@ export interface ReportSession {
 }
 
 export function createReportSession(
-  ownerId: number,
+  userId: number,
+  authorTag: string,
   collector: MessageReference,
   calendar: ReportCalendar,
 ): ReportSession {
   return {
-    ownerId,
+    userId,
+    authorTag,
     type: null,
     step: 'choose',
     collector,

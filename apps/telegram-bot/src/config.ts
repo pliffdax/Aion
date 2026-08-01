@@ -10,9 +10,6 @@ const selectedBotToken = isTestMode ? botTokenTest : botToken;
 const apiUrl = process.env.API_URL?.trim();
 const apiUrlTest = process.env.API_URL_TEST?.trim();
 const apiKey = process.env.API_KEY?.trim();
-const telegramReportAuthorTag =
-  process.env.TELEGRAM_REPORT_AUTHOR_TAG?.trim() || '#АлександрСтепанов';
-const telegramReportStartDate = process.env.TELEGRAM_REPORT_START_DATE?.trim() || '2025-10-13';
 
 if (!selectedBotToken) {
   throw new Error(
@@ -28,10 +25,6 @@ if (!selectedApiUrl) {
 
 if (!apiKey) {
   throw new Error('API_KEY is required');
-}
-
-if (!isCalendarDate(telegramReportStartDate)) {
-  throw new Error('TELEGRAM_REPORT_START_DATE must be a valid date in YYYY-MM-DD format');
 }
 
 if (!telegramOwnerId) {
@@ -73,16 +66,6 @@ export const TELEGRAM_OWNER_ID = parsedTelegramOwnerId;
 export const TELEGRAM_ALLOWED_USER_IDS = [
   ...new Set([parsedTelegramOwnerId, ...parsedTelegramAllowedUserIds]),
 ];
+export const TELEGRAM_ACCESS_RESTRICTED = parsedTelegramAllowedUserIds.length > 0;
 export const API_URL = selectedApiUrl.replace(/\/+$/, '');
 export const API_KEY = apiKey;
-export const TELEGRAM_REPORT_AUTHOR_TAG = telegramReportAuthorTag.startsWith('#')
-  ? telegramReportAuthorTag
-  : `#${telegramReportAuthorTag}`;
-export const TELEGRAM_REPORT_START_DATE = telegramReportStartDate;
-
-function isCalendarDate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
-}

@@ -31,6 +31,8 @@ export const TelegramUserDtoSchema = z.object({
   username: z.string().max(32).nullable(),
   firstName: z.string().max(64).nullable(),
   locale: TelegramLocaleSchema,
+  reportAuthorName: z.string().max(100).nullable(),
+  reportStartDate: TelegramPlanDateSchema.nullable(),
 });
 export type TelegramUserDto = z.infer<typeof TelegramUserDtoSchema>;
 
@@ -46,6 +48,17 @@ export const UpdateTelegramUserLocaleDtoSchema = z.object({
   locale: TelegramLocaleSchema,
 });
 export type UpdateTelegramUserLocaleDto = z.infer<typeof UpdateTelegramUserLocaleDtoSchema>;
+
+export const UpdateTelegramReportProfileDtoSchema = z
+  .object({
+    telegramUserId: TelegramUserIdSchema,
+    reportAuthorName: z.string().trim().min(3).max(100).optional(),
+    reportStartDate: TelegramPlanDateSchema.optional(),
+  })
+  .refine(dto => dto.reportAuthorName !== undefined || dto.reportStartDate !== undefined, {
+    message: 'At least one report profile field must be provided',
+  });
+export type UpdateTelegramReportProfileDto = z.infer<typeof UpdateTelegramReportProfileDtoSchema>;
 
 export const TelegramDailyPlanItemDtoSchema = z.object({
   id: CuidSchema,

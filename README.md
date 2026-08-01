@@ -15,6 +15,9 @@ pnpm dev:telegram-bot:test
 ```
 
 Use a separate BotFather token in `BOT_TOKEN_TEST`. `API_KEY` must match in both local env files.
+Leave `TELEGRAM_ALLOWED_USER_IDS` empty to expose user commands publicly. Setting one or more
+IDs enables restricted access for a dev/test bot; `TELEGRAM_OWNER_ID` remains allowed and keeps
+exclusive access to owner commands.
 
 ## Branches
 
