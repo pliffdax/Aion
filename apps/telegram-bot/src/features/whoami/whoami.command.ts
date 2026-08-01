@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard, Keyboard, type CallbackQueryContext, type Context } from 'grammy';
+import { Bot, InlineKeyboard, Keyboard } from 'grammy';
 import type { Command } from '../../core/commands/command.js';
 import { getLocale, translate } from '../../core/i18n/i18n.js';
 
@@ -8,7 +8,7 @@ const pendingUserRequests = new Set<number>();
 export const command: Command = {
   name: 'whoami',
   descriptionKey: 'command.whoami.description',
-  access: 'owner',
+  access: 'user',
   async handle(context) {
     const locale = getLocale(context.from?.id);
 
@@ -20,10 +20,8 @@ export const command: Command = {
   },
 };
 
-export function registerWhoamiHandlers(bot: Bot, ownerId: number): void {
+export function registerWhoamiHandlers(bot: Bot): void {
   bot.callbackQuery('whoami:self', async context => {
-    if (!(await ensureOwner(context, ownerId))) return;
-
     const locale = getLocale(context.from.id);
     await context.answerCallbackQuery();
     await context.editMessageText(
@@ -35,8 +33,6 @@ export function registerWhoamiHandlers(bot: Bot, ownerId: number): void {
   });
 
   bot.callbackQuery('whoami:other', async context => {
-    if (!(await ensureOwner(context, ownerId))) return;
-
     const locale = getLocale(context.from.id);
     const chatId = context.chat?.id;
 
@@ -61,7 +57,7 @@ export function registerWhoamiHandlers(bot: Bot, ownerId: number): void {
   });
 
   bot.on('message:users_shared', async context => {
-    if (context.from.id !== ownerId || !pendingUserRequests.delete(context.chat.id)) {
+    if (!pendingUserRequests.delete(context.chat.id)) {
       return;
     }
 
@@ -87,14 +83,4 @@ export function registerWhoamiHandlers(bot: Bot, ownerId: number): void {
       },
     );
   });
-}
-
-async function ensureOwner(
-  context: CallbackQueryContext<Context>,
-  ownerId: number,
-): Promise<boolean> {
-  if (context.from.id === ownerId) return true;
-
-  await context.answerCallbackQuery(translate(getLocale(context.from.id), 'access.ownerOnly'));
-  return false;
 }

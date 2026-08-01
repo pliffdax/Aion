@@ -195,6 +195,33 @@ const translations = {
   'report.weekly': ['Недельный', 'Тижневий', 'Weekly'],
   'report.cancel': ['🚫 Отменить отчёт', '🚫 Скасувати звіт', '🚫 Cancel report'],
   'report.cancelled': ['Сбор отчёта отменён.', 'Збір звіту скасовано.', 'Report cancelled.'],
+  'report.setupAuthorPrompt': [
+    '<b>Настройка личных отчётов</b>\n\nВведите имя и фамилию одним сообщением. На их основе я создам хэштег для ваших отчётов.\n\nНапример: <code>Александр Степанов</code>',
+    '<b>Налаштування особистих звітів</b>\n\nВведіть ім’я та прізвище одним повідомленням. На їх основі я створю хештег для ваших звітів.\n\nНаприклад: <code>Олександр Степанов</code>',
+    '<b>Personal report setup</b>\n\nEnter your first and last name in one message. I will use them to create a hashtag for your reports.\n\nExample: <code>Alex Stepanov</code>',
+  ],
+  'report.setupAuthorInvalid': [
+    'Введите имя и фамилию словами, например: Александр Степанов.',
+    'Введіть ім’я та прізвище словами, наприклад: Олександр Степанов.',
+    'Enter your first and last name, for example: Alex Stepanov.',
+  ],
+  'report.setupStartDatePrompt': [
+    '<b>Дата начала отчётов</b>\n\n«Текущая дата» — сегодня станет первым днём первой недели.\n«Своя дата» — вы укажете дату начала вручную.',
+    '<b>Дата початку звітів</b>\n\n«Поточна дата» — сьогодні стане першим днем першого тижня.\n«Своя дата» — ви вкажете дату початку вручну.',
+    '<b>Report start date</b>\n\n“Current date” makes today the first day of week one.\n“Custom date” lets you enter the start date manually.',
+  ],
+  'report.setupCustomDate': ['📅 Своя дата', '📅 Своя дата', '📅 Custom date'],
+  'report.setupToday': ['🟢 Текущая дата', '🟢 Поточна дата', '🟢 Current date'],
+  'report.setupCustomDatePrompt': [
+    '<b>Введите дату начала отчётов</b>\n\nФормат: <code>ДД.ММ.ГГГГ</code>\nНапример: <code>13.10.2025</code>',
+    '<b>Введіть дату початку звітів</b>\n\nФормат: <code>ДД.ММ.РРРР</code>\nНаприклад: <code>13.10.2025</code>',
+    '<b>Enter the report start date</b>\n\nFormat: <code>DD.MM.YYYY</code>\nExample: <code>13.10.2025</code>',
+  ],
+  'report.setupDateInvalid': [
+    'Введите существующую дату не позднее сегодняшней в формате ДД.ММ.ГГГГ.',
+    'Введіть дійсну дату не пізніше сьогоднішньої у форматі ДД.ММ.РРРР.',
+    'Enter a valid date no later than today in DD.MM.YYYY format.',
+  ],
   'report.next': ['⏩️ Дальше', '⏩️ Далі', '⏩️ Next'],
   'report.back': ['⏪️ Назад', '⏪️ Назад', '⏪️ Back'],
   'report.clear': ['Очистить', 'Очистити', 'Clear'],

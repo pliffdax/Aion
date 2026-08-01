@@ -20,6 +20,7 @@ export async function createBot(
   token: string,
   ownerId: number,
   allowedUserIds: readonly number[],
+  restrictAccess: boolean,
   apiClient: AionApiClient,
 ): Promise<Bot> {
   const bot = new Bot(token);
@@ -49,7 +50,7 @@ export async function createBot(
       return;
     }
 
-    if (!userId || !allowedUsers.has(userId)) {
+    if (!userId || (restrictAccess && !allowedUsers.has(userId))) {
       logWarn('telegram.access.denied', {
         ...telegramContextFields(context),
         ...telegramUpdateFields(context),
@@ -90,12 +91,13 @@ export async function createBot(
   await registerCommands(bot, commands, {
     ownerId,
     allowedUserIds,
+    restrictAccess,
   });
   registerDailyPlanHandlers(bot, apiClient);
   registerLanguageHandlers(bot, commands, ownerId, apiClient);
   registerReminderHandlers(bot, apiClient);
-  registerReportHandlers(bot, ownerId);
-  registerWhoamiHandlers(bot, ownerId);
+  registerReportHandlers(bot, apiClient);
+  registerWhoamiHandlers(bot);
 
   bot.catch(async error => {
     logError('telegram.update.failed', {

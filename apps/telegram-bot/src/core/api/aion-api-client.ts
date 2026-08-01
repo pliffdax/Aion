@@ -35,6 +35,16 @@ export class AionApiClient {
     });
   }
 
+  updateTelegramUserReportProfile(
+    telegramUserId: number,
+    fields: { reportAuthorName?: string; reportStartDate?: string },
+  ): Promise<v1.TelegramUserDto> {
+    return this.request('/telegram/users/report-profile', v1.TelegramUserDtoSchema, 'PATCH', {
+      telegramUserId: String(telegramUserId),
+      ...fields,
+    });
+  }
+
   getOrCreateDailyPlan(telegramUserId: number, date: string): Promise<v1.TelegramDailyPlanDto> {
     return this.request('/telegram/daily-plans', v1.TelegramDailyPlanDtoSchema, 'PUT', {
       telegramUserId: String(telegramUserId),
