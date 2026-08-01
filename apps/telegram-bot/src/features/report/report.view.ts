@@ -14,7 +14,7 @@ import {
 } from './report.session.js';
 
 export function renderCollector(session: ReportSession): string {
-  const locale = getLocale(session.ownerId);
+  const locale = getLocale(session.userId);
 
   if (session.step === 'choose') {
     return translate(locale, 'report.chooseType');
@@ -31,7 +31,7 @@ export function renderCollector(session: ReportSession): string {
 }
 
 export function buildCollectorKeyboard(session: ReportSession): InlineKeyboard {
-  const locale = getLocale(session.ownerId);
+  const locale = getLocale(session.userId);
 
   if (session.step === 'choose') return buildTypeKeyboard(locale);
   if (session.editingItemId !== null) return buildEditingKeyboard(locale);
@@ -47,6 +47,18 @@ export function buildTypeKeyboard(locale: Locale): InlineKeyboard {
     .text(translate(locale, 'report.weekly'), 'report:type:weekly')
     .row()
     .text(translate(locale, 'report.cancel'), 'report:cancel');
+}
+
+export function buildReportSetupCancelKeyboard(locale: Locale): InlineKeyboard {
+  return new InlineKeyboard().text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+}
+
+export function buildReportStartDateKeyboard(locale: Locale): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(translate(locale, 'report.setupCustomDate'), 'report:setup:date:custom')
+    .text(translate(locale, 'report.setupToday'), 'report:setup:date:today')
+    .row()
+    .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
 }
 
 function renderStepContent(session: ReportSession, locale: Locale): string[] {

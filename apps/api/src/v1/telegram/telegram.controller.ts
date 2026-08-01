@@ -23,6 +23,13 @@ export class TelegramController {
     return this.telegram.updateUserLocale(parseBody(v1.UpdateTelegramUserLocaleDtoSchema, body));
   }
 
+  @Patch('users/report-profile')
+  updateUserReportProfile(@Body() body: unknown) {
+    return this.telegram.updateUserReportProfile(
+      parseBody(v1.UpdateTelegramReportProfileDtoSchema, body),
+    );
+  }
+
   @Put('daily-plans')
   getOrCreateDailyPlan(@Body() body: unknown) {
     return this.telegram.getOrCreateDailyPlan(

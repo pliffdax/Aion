@@ -39,7 +39,7 @@ export function calculateReportCalendar(date: string, startDate: string): Report
   );
 
   if (elapsedDays < 0) {
-    throw new Error('Report date is earlier than TELEGRAM_REPORT_START_DATE');
+    throw new Error('Report date is earlier than the user report start date');
   }
 
   return {

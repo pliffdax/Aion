@@ -4,6 +4,7 @@ import {
   API_KEY,
   API_URL,
   BOT_TOKEN,
+  TELEGRAM_ACCESS_RESTRICTED,
   TELEGRAM_ALLOWED_USER_IDS,
   TELEGRAM_OWNER_ID,
 } from './config.js';
@@ -12,7 +13,13 @@ import { startDailyPlanRollover } from './features/daily-plan/daily-plan-rollove
 import { startReminderDelivery } from './features/reminder/reminder-delivery.js';
 
 const apiClient = new AionApiClient(API_URL, API_KEY);
-const bot = await createBot(BOT_TOKEN, TELEGRAM_OWNER_ID, TELEGRAM_ALLOWED_USER_IDS, apiClient);
+const bot = await createBot(
+  BOT_TOKEN,
+  TELEGRAM_OWNER_ID,
+  TELEGRAM_ALLOWED_USER_IDS,
+  TELEGRAM_ACCESS_RESTRICTED,
+  apiClient,
+);
 const reminderDelivery = startReminderDelivery(bot.api, apiClient);
 const dailyPlanRollover = startDailyPlanRollover(bot.api, apiClient);
 
@@ -34,6 +41,7 @@ await bot.start({
   onStart: ({ username }) => {
     logInfo('telegram.bot.started', {
       username,
+      accessMode: TELEGRAM_ACCESS_RESTRICTED ? 'restricted' : 'public',
       allowedUserCount: TELEGRAM_ALLOWED_USER_IDS.length,
     });
   },

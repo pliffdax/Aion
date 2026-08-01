@@ -1,11 +1,13 @@
 model TelegramUser {
-  id         String         @id @default(cuid())
-  telegramId BigInt         @unique
-  username   String?        @db.VarChar(32)
-  firstName  String?        @db.VarChar(64)
-  locale     TelegramLocale @default(RU)
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
+  id               String         @id @default(cuid())
+  telegramId       BigInt         @unique
+  username         String?        @db.VarChar(32)
+  firstName        String?        @db.VarChar(64)
+  locale           TelegramLocale @default(RU)
+  reportAuthorName String?        @db.VarChar(100)
+  reportStartDate  DateTime?      @db.Date
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
   dailyPlans DailyPlan[]
   reminders  TelegramReminder[]

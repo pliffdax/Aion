@@ -6,6 +6,7 @@ import type { Command } from './command.js';
 interface CommandRegistrationOptions {
   ownerId: number;
   allowedUserIds: readonly number[];
+  restrictAccess: boolean;
 }
 
 export async function registerCommands(
@@ -28,7 +29,7 @@ export async function registerCommands(
     });
   }
 
-  const userCommands = visibleCommands(commands, false);
+  const userCommands = options.restrictAccess ? [] : visibleCommands(commands, false);
 
   await bot.api.setMyCommands(toTelegramCommands(userCommands, 'ru'), {
     scope: { type: 'default' },

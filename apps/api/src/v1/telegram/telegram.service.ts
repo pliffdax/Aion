@@ -56,6 +56,26 @@ export class TelegramService {
     return toTelegramUserDto(user);
   }
 
+  async updateUserReportProfile(
+    dto: v1.UpdateTelegramReportProfileDto,
+  ): Promise<v1.TelegramUserDto> {
+    const telegramId = BigInt(dto.telegramUserId);
+    const reportStartDate = dto.reportStartDate
+      ? new Date(`${dto.reportStartDate}T00:00:00.000Z`)
+      : undefined;
+    const reportProfile = {
+      ...(dto.reportAuthorName !== undefined ? { reportAuthorName: dto.reportAuthorName } : {}),
+      ...(reportStartDate !== undefined ? { reportStartDate } : {}),
+    };
+    const user = await this.prisma.telegramUser.upsert({
+      where: { telegramId },
+      create: { telegramId, ...reportProfile },
+      update: reportProfile,
+    });
+
+    return toTelegramUserDto(user);
+  }
+
   async getOrCreateDailyPlan(
     dto: v1.GetOrCreateTelegramDailyPlanDto,
   ): Promise<v1.TelegramDailyPlanDto> {
@@ -535,6 +555,8 @@ function toTelegramUserDto(user: {
   username: string | null;
   firstName: string | null;
   locale: TelegramLocale;
+  reportAuthorName: string | null;
+  reportStartDate: Date | null;
 }): v1.TelegramUserDto {
   return {
     id: user.id,
@@ -542,6 +564,8 @@ function toTelegramUserDto(user: {
     username: user.username,
     firstName: user.firstName,
     locale: user.locale.toLowerCase() as v1.TelegramLocale,
+    reportAuthorName: user.reportAuthorName,
+    reportStartDate: user.reportStartDate?.toISOString().slice(0, 10) ?? null,
   };
 }
 
