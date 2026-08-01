@@ -53,10 +53,19 @@ export function buildReportSetupCancelKeyboard(locale: Locale): InlineKeyboard {
   return new InlineKeyboard().text(translate(locale, 'report.cancel'), 'report:setup:cancel');
 }
 
+export function buildReportSetupBackAndCancelKeyboard(locale: Locale): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(translate(locale, 'report.back'), 'report:setup:back')
+    .row()
+    .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+}
+
 export function buildReportStartDateKeyboard(locale: Locale): InlineKeyboard {
   return new InlineKeyboard()
     .text(translate(locale, 'report.setupCustomDate'), 'report:setup:date:custom')
     .text(translate(locale, 'report.setupToday'), 'report:setup:date:today')
+    .row()
+    .text(translate(locale, 'report.back'), 'report:setup:back')
     .row()
     .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
 }
