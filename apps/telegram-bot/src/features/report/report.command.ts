@@ -37,6 +37,7 @@ import {
 } from './report.session.js';
 import {
   buildCollectorKeyboard,
+  buildReportSetupBackAndCancelKeyboard,
   buildReportSetupCancelKeyboard,
   buildReportStartDateKeyboard,
   buildTypeKeyboard,
@@ -158,6 +159,33 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
     });
   });
 
+  bot.callbackQuery('report:setup:back', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step === 'author-name') return;
+
+    await context.answerCallbackQuery();
+
+    if (setup.step === 'custom-date') {
+      setup.step = 'date-choice';
+      releaseTextInput(setup.userId, 'report');
+      await context.editMessageText(
+        translate(getLocale(setup.userId), 'report.setupStartDatePrompt'),
+        {
+          parse_mode: 'HTML',
+          reply_markup: buildReportStartDateKeyboard(getLocale(setup.userId)),
+        },
+      );
+      return;
+    }
+
+    setup.step = 'author-name';
+    claimTextInput(setup.userId, 'report');
+    await context.editMessageText(translate(getLocale(setup.userId), 'report.setupAuthorPrompt'), {
+      parse_mode: 'HTML',
+      reply_markup: buildReportSetupCancelKeyboard(getLocale(setup.userId)),
+    });
+  });
+
   bot.callbackQuery('report:setup:date:custom', async context => {
     const setup = await activeSetupSession(context);
     if (!setup || setup.step !== 'date-choice') return;
@@ -169,7 +197,7 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
       translate(getLocale(setup.userId), 'report.setupCustomDatePrompt'),
       {
         parse_mode: 'HTML',
-        reply_markup: buildReportSetupCancelKeyboard(getLocale(setup.userId)),
+        reply_markup: buildReportSetupBackAndCancelKeyboard(getLocale(setup.userId)),
       },
     );
   });

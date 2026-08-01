@@ -41,6 +41,7 @@ interface ReminderSession {
   text: string;
   remindAt: string | null;
   recurrence: ReminderRecurrenceDraft;
+  backStep: ReminderStep | null;
 }
 
 const maxReminderTextLength = 1000;
@@ -88,6 +89,7 @@ export const command: Command = {
       text: '',
       remindAt: null,
       recurrence: { ...emptyRecurrenceDraft },
+      backStep: null,
     });
   },
 };
@@ -103,6 +105,7 @@ export function registerReminderHandlers(bot: Bot, apiClient: AionApiClient): vo
     session.text = '';
     session.remindAt = null;
     session.recurrence = { ...emptyRecurrenceDraft };
+    session.backStep = null;
     claimTextInput(session.userId, 'reminder');
     await context.answerCallbackQuery();
     await refreshCollector(context.api, session);
@@ -120,14 +123,35 @@ export function registerReminderHandlers(bot: Bot, apiClient: AionApiClient): vo
     const session = await activeSession(context);
     if (!session) return;
 
-    releaseTextInput(session.userId, 'reminder');
-    const reminders = await apiClient.listReminders(session.userId);
-    session.step = 'menu';
     await context.answerCallbackQuery();
-    await context.editMessageText(renderMenu(session.userId, reminders.length), {
-      parse_mode: 'HTML',
-      reply_markup: menuKeyboard(session.userId),
-    });
+    await showReminderMenu(context.api, session, apiClient);
+  });
+
+  bot.callbackQuery('reminder:back', async context => {
+    const session = await activeSession(context);
+    if (!session) return;
+
+    const previousStep = session.backStep ?? previousReminderStep(session);
+    session.backStep = null;
+    await context.answerCallbackQuery();
+
+    if (previousStep === 'menu') {
+      session.text = '';
+      session.remindAt = null;
+      session.recurrence = { ...emptyRecurrenceDraft };
+      await showReminderMenu(context.api, session, apiClient);
+      return;
+    }
+
+    session.step = previousStep;
+
+    if (stepAcceptsText(previousStep)) {
+      claimTextInput(session.userId, 'reminder');
+    } else {
+      releaseTextInput(session.userId, 'reminder');
+    }
+
+    await refreshCollector(context.api, session);
   });
 
   bot.callbackQuery('reminder:edit-text', async context => {
@@ -135,6 +159,7 @@ export function registerReminderHandlers(bot: Bot, apiClient: AionApiClient): vo
     if (!session) return;
 
     session.step = 'text';
+    session.backStep = 'confirm';
     claimTextInput(session.userId, 'reminder');
     await context.answerCallbackQuery();
     await refreshCollector(context.api, session);
@@ -145,6 +170,7 @@ export function registerReminderHandlers(bot: Bot, apiClient: AionApiClient): vo
     if (!session) return;
 
     session.step = 'date';
+    session.backStep = 'confirm';
     claimTextInput(session.userId, 'reminder');
     await context.answerCallbackQuery();
     await refreshCollector(context.api, session);
@@ -155,6 +181,7 @@ export function registerReminderHandlers(bot: Bot, apiClient: AionApiClient): vo
     if (!session) return;
 
     session.step = 'recurrence';
+    session.backStep = 'confirm';
     releaseTextInput(session.userId, 'reminder');
     await context.answerCallbackQuery();
     await refreshCollector(context.api, session);
@@ -165,6 +192,7 @@ export function registerReminderHandlers(bot: Bot, apiClient: AionApiClient): vo
     if (!session) return;
 
     const type = context.match[1] as v1.TelegramReminderRepeatType;
+    session.backStep = null;
     session.recurrence = {
       type,
       intervalMinutes: null,
@@ -191,6 +219,7 @@ export function registerReminderHandlers(bot: Bot, apiClient: AionApiClient): vo
     if (!session || session.recurrence.type !== 'interval') return;
 
     session.recurrence.intervalMinutes = Number(context.match[1]);
+    session.backStep = null;
     session.step = 'limit';
     claimTextInput(session.userId, 'reminder');
     await context.answerCallbackQuery();
@@ -209,6 +238,7 @@ export function registerReminderHandlers(bot: Bot, apiClient: AionApiClient): vo
     }
 
     session.recurrence.repeatLimit = value === 'unlimited' ? null : Number(value);
+    session.backStep = null;
     session.step = 'confirm';
     releaseTextInput(session.userId, 'reminder');
     await context.answerCallbackQuery();
@@ -233,6 +263,7 @@ export function registerReminderHandlers(bot: Bot, apiClient: AionApiClient): vo
     session.text = '';
     session.remindAt = null;
     session.recurrence = { ...emptyRecurrenceDraft };
+    session.backStep = null;
     await context.editMessageText(renderSavedReminder(session.userId, reminder), {
       parse_mode: 'HTML',
       reply_markup: menuKeyboard(session.userId),
@@ -321,6 +352,7 @@ async function acceptReminderText(
   }
 
   session.text = text;
+  session.backStep = null;
   session.step = 'date';
   await refreshCollector(telegramApi, session);
   return true;
@@ -342,6 +374,7 @@ async function acceptReminderDate(
   }
 
   session.remindAt = parsed.remindAt.toISOString();
+  session.backStep = null;
   session.recurrence = { ...emptyRecurrenceDraft };
   session.step = 'recurrence';
   releaseTextInput(session.userId, 'reminder');
@@ -374,6 +407,7 @@ async function acceptRepeatInterval(
   }
 
   session.recurrence.intervalMinutes = intervalMinutes;
+  session.backStep = null;
   session.step = 'limit';
   claimTextInput(session.userId, 'reminder');
   await refreshCollector(telegramApi, session);
@@ -407,6 +441,7 @@ async function acceptRepeatLimit(
   }
 
   session.recurrence.repeatLimit = repeatLimit;
+  session.backStep = null;
   session.step = 'confirm';
   releaseTextInput(session.userId, 'reminder');
   await refreshCollector(telegramApi, session);
@@ -443,6 +478,26 @@ async function showReminderList(
     {
       parse_mode: 'HTML',
       reply_markup: listKeyboard(session.userId, reminders),
+    },
+  );
+}
+
+async function showReminderMenu(
+  telegramApi: TelegramApi,
+  session: ReminderSession,
+  apiClient: AionApiClient,
+): Promise<void> {
+  const reminders = await apiClient.listReminders(session.userId);
+  session.step = 'menu';
+  releaseTextInput(session.userId, 'reminder');
+
+  await telegramApi.editMessageText(
+    session.chatId,
+    session.collectorMessageId,
+    renderMenu(session.userId, reminders.length),
+    {
+      parse_mode: 'HTML',
+      reply_markup: menuKeyboard(session.userId),
     },
   );
 }
@@ -680,7 +735,33 @@ function collectorKeyboard(session: ReminderSession): InlineKeyboard {
     keyboard.text(translate(locale, 'reminder.editRepeat'), 'reminder:edit-repeat').row();
   }
 
-  return keyboard.text(translate(locale, 'reminder.cancel'), 'reminder:cancel');
+  return keyboard
+    .text(translate(locale, 'reminder.back'), 'reminder:back')
+    .row()
+    .text(translate(locale, 'reminder.cancel'), 'reminder:cancel');
+}
+
+function previousReminderStep(session: ReminderSession): ReminderStep {
+  switch (session.step) {
+    case 'text':
+      return 'menu';
+    case 'date':
+      return 'text';
+    case 'recurrence':
+      return 'date';
+    case 'interval':
+      return 'recurrence';
+    case 'limit':
+      return session.recurrence.type === 'interval' ? 'interval' : 'recurrence';
+    case 'confirm':
+      return session.recurrence.type === 'none' ? 'recurrence' : 'limit';
+    default:
+      return 'menu';
+  }
+}
+
+function stepAcceptsText(step: ReminderStep): boolean {
+  return step === 'text' || step === 'date' || step === 'interval' || step === 'limit';
 }
 
 function listKeyboard(userId: number, reminders: v1.TelegramReminderListDto): InlineKeyboard {
