@@ -2,6 +2,7 @@ const maxAuthorNameLength = 100;
 const namePartPattern = /^\p{L}+(?:[-'’]\p{L}+)*$/u;
 const dottedDatePattern = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
 const isoDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
+const millisecondsPerDay = 86_400_000;
 
 export function normalizeReportAuthorName(input: string): string | null {
   const normalized = input.trim().replace(/\s+/g, ' ');
@@ -41,4 +42,26 @@ export function parseReportStartDate(input: string, today: string): string | nul
 
   const dateKey = date.toISOString().slice(0, 10);
   return dateKey <= today ? dateKey : null;
+}
+
+export function reportStartDateFromWeekDay(input: string, today: string): string | null {
+  if (/-\s*\d/.test(input)) return null;
+
+  const numbers = input.match(/\d+/g);
+  if (!numbers || numbers.length !== 2) return null;
+
+  const week = Number(numbers[0]);
+  const day = Number(numbers[1]);
+  if (!Number.isSafeInteger(week) || week < 1 || !Number.isSafeInteger(day) || day < 1 || day > 7) {
+    return null;
+  }
+
+  const todayTimestamp = Date.parse(`${today}T00:00:00.000Z`);
+  const elapsedDays = (week - 1) * 7 + day - 1;
+  const startTimestamp = todayTimestamp - elapsedDays * millisecondsPerDay;
+  const minimumTimestamp = Date.parse('1970-01-01T00:00:00.000Z');
+
+  if (!Number.isSafeInteger(elapsedDays) || startTimestamp < minimumTimestamp) return null;
+
+  return new Date(startTimestamp).toISOString().slice(0, 10);
 }
