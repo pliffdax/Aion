@@ -53,6 +53,9 @@ export function formatDailyReport(
   draft: DailyReportDraft,
   calendar: ReportCalendar,
   authorTag: string,
+  sections: Array<
+    'daily-priorities' | 'daily-event' | 'daily-conclusion' | 'daily-tomorrow' | 'daily-rating'
+  >,
 ): string {
   const date = calendar.date.split('-').reverse().join('.');
 
@@ -61,19 +64,7 @@ export function formatDailyReport(
     `<b>${escapeHtml(authorTag)}</b>`,
     `<b>#Неделя${calendar.week} #День${calendar.day}</b>`,
     '',
-    '<b>Приоритет дня:</b>',
-    ...draft.priorities.map(item => `– ${escapeHtml(item.text)} ${statusMarker(item.status)}`),
-    '',
-    '<b>Событие дня:</b>',
-    escapeHtml(draft.event),
-    '',
-    '<b>Вывод дня:</b>',
-    escapeHtml(draft.conclusion),
-    '',
-    '<b>Главная задача на завтра:</b>',
-    ...draft.tomorrow.map(item => `– ${escapeHtml(item.text)}`),
-    '',
-    `Счастье: ${draft.rating ?? 0}/10`,
+    ...joinReportSections(sections.map(section => formatDailySection(section, draft))),
   ].join('\n');
 }
 
@@ -81,26 +72,69 @@ export function formatWeeklyReport(
   draft: WeeklyReportDraft,
   calendar: ReportCalendar,
   authorTag: string,
+  sections: Array<
+    'weekly-wins' | 'weekly-failure' | 'weekly-insight' | 'weekly-next' | 'weekly-review'
+  >,
 ): string {
   return [
     `<b>Неделя ${calendar.week}</b>`,
     `<b>${escapeHtml(authorTag)} #Сводка</b>`,
     '',
-    `<b>${victoryHeading(draft.wins.length)}:</b>`,
-    ...draft.wins.map((item, index) => `${index + 1}. ${escapeHtml(item.text)}`),
-    '',
-    '<b>1 провал:</b>',
-    escapeHtml(draft.failure),
-    '',
-    '<b>Инсайт недели:</b>',
-    escapeHtml(draft.insight),
-    '',
-    '<b>План на следующую неделю:</b>',
-    ...draft.nextWeek.map((item, index) => `${index + 1}. ${escapeHtml(item.text)}`),
-    '',
-    '<b>Прошу на разбор:</b>',
-    draft.requestReview ? 'Да.' : 'Нет.',
+    ...joinReportSections(sections.map(section => formatWeeklySection(section, draft))),
   ].join('\n');
+}
+
+function formatDailySection(
+  section:
+    'daily-priorities' | 'daily-event' | 'daily-conclusion' | 'daily-tomorrow' | 'daily-rating',
+  draft: DailyReportDraft,
+): string[] {
+  switch (section) {
+    case 'daily-priorities':
+      return [
+        '<b>Приоритет дня:</b>',
+        ...draft.priorities.map(item => `– ${escapeHtml(item.text)} ${statusMarker(item.status)}`),
+      ];
+    case 'daily-event':
+      return ['<b>Событие дня:</b>', escapeHtml(draft.event)];
+    case 'daily-conclusion':
+      return ['<b>Вывод дня:</b>', escapeHtml(draft.conclusion)];
+    case 'daily-tomorrow':
+      return [
+        '<b>Главные задачи на завтра:</b>',
+        ...draft.tomorrow.map(item => `– ${escapeHtml(item.text)}`),
+      ];
+    case 'daily-rating':
+      return [`Счастье: ${draft.rating ?? 0}/10`];
+  }
+}
+
+function formatWeeklySection(
+  section: 'weekly-wins' | 'weekly-failure' | 'weekly-insight' | 'weekly-next' | 'weekly-review',
+  draft: WeeklyReportDraft,
+): string[] {
+  switch (section) {
+    case 'weekly-wins':
+      return [
+        `<b>${victoryHeading(draft.wins.length)}:</b>`,
+        ...draft.wins.map((item, index) => `${index + 1}. ${escapeHtml(item.text)}`),
+      ];
+    case 'weekly-failure':
+      return ['<b>1 провал:</b>', escapeHtml(draft.failure)];
+    case 'weekly-insight':
+      return ['<b>Инсайт недели:</b>', escapeHtml(draft.insight)];
+    case 'weekly-next':
+      return [
+        '<b>План на следующую неделю:</b>',
+        ...draft.nextWeek.map((item, index) => `${index + 1}. ${escapeHtml(item.text)}`),
+      ];
+    case 'weekly-review':
+      return ['<b>Прошу на разбор:</b>', draft.requestReview ? 'Да.' : 'Нет.'];
+  }
+}
+
+function joinReportSections(sections: string[][]): string[] {
+  return sections.flatMap((section, index) => (index === 0 ? section : ['', ...section]));
 }
 
 function statusMarker(status: ReportItemStatus): string {

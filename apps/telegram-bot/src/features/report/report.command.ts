@@ -6,6 +6,7 @@ import {
   buildReportAuthorTag,
   normalizeReportAuthorName,
   parseReportStartDate,
+  reportStartDateFromWeekDay,
 } from './report-profile.js';
 import {
   claimTextInput,
@@ -19,8 +20,7 @@ import {
   type ReportItem,
 } from './report.formatter.js';
 import {
-  advanceFromList,
-  advanceFromText,
+  advanceReportStep,
   createReportSession,
   currentItems,
   currentText,
@@ -31,16 +31,26 @@ import {
   normalizeItem,
   parseItems,
   retreatReportStep,
+  setReportType,
   setCurrentText,
+  type ConfiguredReportStep,
+  type DailyReportSection,
   type ReportSession,
   type ReportType,
+  type WeeklyReportSection,
 } from './report.session.js';
 import {
+  buildReportMenuKeyboard,
+  buildReportSectionConfigurationKeyboard,
+  buildReportSettingsKeyboard,
   buildCollectorKeyboard,
   buildReportSetupBackAndCancelKeyboard,
   buildReportSetupCancelKeyboard,
   buildReportStartDateKeyboard,
   buildTypeKeyboard,
+  renderReportMenu,
+  renderReportSectionConfiguration,
+  renderReportSettings,
   renderCollector,
 } from './report.view.js';
 
@@ -51,16 +61,34 @@ const maxTextLength = 800;
 const maxDraftCharacters = 3_000;
 const itemActionPattern = /^report:item:(status|edit|delete):(\d+)$/;
 const ratingPattern = /^report:rating:(10|[1-9])$/;
+const configurationActionPattern =
+  /^report:config:(daily|weekly):(toggle|up|down):(daily-(?:priorities|event|conclusion|tomorrow|rating)|weekly-(?:wins|failure|insight|next|review))$/;
 
 type ItemAction = 'status' | 'edit' | 'delete';
 
-type ReportSetupStep = 'author-name' | 'date-choice' | 'custom-date';
+type ReportSetupStep =
+  | 'report-menu'
+  | 'settings-menu'
+  | 'author-name'
+  | 'date-choice'
+  | 'custom-date'
+  | 'week-day'
+  | 'daily-sections'
+  | 'weekly-sections';
+
+type ReportSetupFlow = 'onboarding' | 'settings';
 
 interface ReportSetupSession {
   userId: number;
   collector: { chatId: number; messageId: number };
   step: ReportSetupStep;
+  flow: ReportSetupFlow;
   authorName: string | null;
+  startDate: string | null;
+  dailySections: DailyReportSection[];
+  weeklySections: WeeklyReportSection[];
+  savedDailySections: DailyReportSection[];
+  savedWeeklySections: WeeklyReportSection[];
 }
 
 const sessionsByUserId = new Map<number, ReportSession>();
@@ -94,6 +122,17 @@ export const command: Command = {
     sessionsByUserId.delete(userId);
     setupSessionsByUserId.delete(userId);
 
+    const baseSetup = {
+      userId,
+      flow: 'onboarding' as const,
+      authorName: profile.reportAuthorName,
+      startDate: profile.reportStartDate,
+      dailySections: [...profile.reportDailySections],
+      weeklySections: [...profile.reportWeeklySections],
+      savedDailySections: [...profile.reportDailySections],
+      savedWeeklySections: [...profile.reportWeeklySections],
+    };
+
     if (!profile.reportAuthorName) {
       claimTextInput(userId, 'report');
       const message = await context.reply(
@@ -104,10 +143,9 @@ export const command: Command = {
         },
       );
       setupSessionsByUserId.set(userId, {
-        userId,
         collector: { chatId: message.chat.id, messageId: message.message_id },
         step: 'author-name',
-        authorName: null,
+        ...baseSetup,
       });
       return;
     }
@@ -122,25 +160,32 @@ export const command: Command = {
         },
       );
       setupSessionsByUserId.set(userId, {
-        userId,
         collector: { chatId: message.chat.id, messageId: message.message_id },
         step: 'date-choice',
-        authorName: profile.reportAuthorName,
+        ...baseSetup,
       });
       return;
     }
 
-    claimTextInput(userId, 'report');
-    const message = await context.reply(translate(getLocale(userId), 'report.chooseType'), {
-      reply_markup: buildTypeKeyboard(getLocale(userId)),
-    });
-    sessionsByUserId.set(
-      userId,
-      configuredReportSession(userId, profile.reportAuthorName, profile.reportStartDate, {
-        chatId: message.chat.id,
-        messageId: message.message_id,
-      }),
+    releaseTextInput(userId, 'report');
+    const message = await context.reply(
+      renderReportMenu(
+        getLocale(userId),
+        profile.reportAuthorName,
+        profile.reportStartDate,
+        calculateReportCalendar(currentDateKey(), profile.reportStartDate),
+      ),
+      {
+        parse_mode: 'HTML',
+        reply_markup: buildReportMenuKeyboard(getLocale(userId)),
+      },
     );
+    setupSessionsByUserId.set(userId, {
+      ...baseSetup,
+      flow: 'settings',
+      collector: { chatId: message.chat.id, messageId: message.message_id },
+      step: 'report-menu',
+    });
   },
 };
 
@@ -159,24 +204,168 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
     });
   });
 
+  bot.callbackQuery('report:menu:start', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'report-menu' || !setup.authorName || !setup.startDate) return;
+
+    setupSessionsByUserId.delete(setup.userId);
+    claimTextInput(setup.userId, 'report');
+    sessionsByUserId.set(
+      setup.userId,
+      configuredReportSession(
+        setup.userId,
+        setup.authorName,
+        setup.startDate,
+        setup.collector,
+        setup.savedDailySections,
+        setup.savedWeeklySections,
+      ),
+    );
+    await context.answerCallbackQuery();
+    await context.editMessageText(translate(getLocale(setup.userId), 'report.chooseType'), {
+      reply_markup: buildTypeKeyboard(getLocale(setup.userId)),
+    });
+  });
+
+  bot.callbackQuery('report:menu:settings', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'report-menu') return;
+
+    await context.answerCallbackQuery();
+    await showReportSettings(context.api, setup);
+  });
+
+  bot.callbackQuery('report:settings:author', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'settings-menu') return;
+
+    setup.step = 'author-name';
+    setup.flow = 'settings';
+    claimTextInput(setup.userId, 'report');
+    await context.answerCallbackQuery();
+    await context.editMessageText(translate(getLocale(setup.userId), 'report.setupAuthorPrompt'), {
+      parse_mode: 'HTML',
+      reply_markup: buildReportSetupBackAndCancelKeyboard(getLocale(setup.userId)),
+    });
+  });
+
+  bot.callbackQuery('report:settings:calendar', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'settings-menu') return;
+
+    setup.flow = 'settings';
+    await context.answerCallbackQuery();
+    await showReportDateChoice(context.api, setup);
+  });
+
+  bot.callbackQuery(/^report:settings:(daily|weekly)$/, async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'settings-menu') return;
+
+    const type = context.match[1] as ReportType;
+    if (type === 'daily') setup.dailySections = [...setup.savedDailySections];
+    else setup.weeklySections = [...setup.savedWeeklySections];
+    setup.step = type === 'daily' ? 'daily-sections' : 'weekly-sections';
+    await context.answerCallbackQuery();
+    await showReportSectionConfiguration(context.api, setup, type);
+  });
+
+  bot.callbackQuery('report:settings:back', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup) return;
+
+    await context.answerCallbackQuery();
+    releaseTextInput(setup.userId, 'report');
+
+    if (setup.step === 'daily-sections') {
+      setup.dailySections = [...setup.savedDailySections];
+    } else if (setup.step === 'weekly-sections') {
+      setup.weeklySections = [...setup.savedWeeklySections];
+    }
+
+    if (setup.step === 'settings-menu') {
+      await showReportMenu(context.api, setup);
+      return;
+    }
+
+    await showReportSettings(context.api, setup);
+  });
+
+  bot.callbackQuery(configurationActionPattern, async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup) return;
+
+    const type = context.match[1] as ReportType;
+    const action = context.match[2] as 'toggle' | 'up' | 'down';
+    const section = context.match[3] as ConfiguredReportStep;
+    const expectedStep = type === 'daily' ? 'daily-sections' : 'weekly-sections';
+    if (setup.step !== expectedStep || !section.startsWith(`${type}-`)) return;
+
+    const sections: ConfiguredReportStep[] =
+      type === 'daily' ? setup.dailySections : setup.weeklySections;
+    const sectionIndex = sections.indexOf(section);
+
+    if (action === 'toggle') {
+      if (sectionIndex >= 0 && sections.length === 1) {
+        await context.answerCallbackQuery(
+          translate(getLocale(setup.userId), 'report.atLeastOneSection'),
+        );
+        return;
+      }
+
+      if (sectionIndex >= 0) sections.splice(sectionIndex, 1);
+      else sections.push(section);
+    } else if (sectionIndex >= 0) {
+      const targetIndex = action === 'up' ? sectionIndex - 1 : sectionIndex + 1;
+      if (targetIndex >= 0 && targetIndex < sections.length) {
+        [sections[sectionIndex], sections[targetIndex]] = [
+          sections[targetIndex],
+          sections[sectionIndex],
+        ];
+      }
+    }
+
+    await context.answerCallbackQuery();
+    await showReportSectionConfiguration(context.api, setup, type);
+  });
+
+  bot.callbackQuery(/^report:config:(daily|weekly):save$/, async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup) return;
+
+    const type = context.match[1] as ReportType;
+    const expectedStep = type === 'daily' ? 'daily-sections' : 'weekly-sections';
+    if (setup.step !== expectedStep) return;
+
+    await apiClient.updateTelegramUserReportProfile(
+      setup.userId,
+      type === 'daily'
+        ? { reportDailySections: setup.dailySections }
+        : { reportWeeklySections: setup.weeklySections },
+    );
+    if (type === 'daily') setup.savedDailySections = [...setup.dailySections];
+    else setup.savedWeeklySections = [...setup.weeklySections];
+    await context.answerCallbackQuery(translate(getLocale(setup.userId), 'report.settingsSaved'));
+    await showReportSettings(context.api, setup);
+  });
+
   bot.callbackQuery('report:setup:back', async context => {
     const setup = await activeSetupSession(context);
-    if (!setup || setup.step === 'author-name') return;
+    if (!setup) return;
 
     await context.answerCallbackQuery();
 
-    if (setup.step === 'custom-date') {
-      setup.step = 'date-choice';
-      releaseTextInput(setup.userId, 'report');
-      await context.editMessageText(
-        translate(getLocale(setup.userId), 'report.setupStartDatePrompt'),
-        {
-          parse_mode: 'HTML',
-          reply_markup: buildReportStartDateKeyboard(getLocale(setup.userId)),
-        },
-      );
+    if (setup.step === 'custom-date' || setup.step === 'week-day') {
+      await showReportDateChoice(context.api, setup);
       return;
     }
+
+    if (setup.flow === 'settings') {
+      await showReportSettings(context.api, setup);
+      return;
+    }
+
+    if (setup.step === 'author-name') return;
 
     setup.step = 'author-name';
     claimTextInput(setup.userId, 'report');
@@ -202,26 +391,59 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
     );
   });
 
+  bot.callbackQuery('report:setup:date:week-day', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'date-choice') return;
+
+    setup.step = 'week-day';
+    claimTextInput(setup.userId, 'report');
+    await context.answerCallbackQuery();
+    await context.editMessageText(translate(getLocale(setup.userId), 'report.setupWeekDayPrompt'), {
+      parse_mode: 'HTML',
+      reply_markup: buildReportSetupBackAndCancelKeyboard(getLocale(setup.userId)),
+    });
+  });
+
   bot.callbackQuery('report:setup:date:today', async context => {
     const setup = await activeSetupSession(context);
     if (!setup || setup.step !== 'date-choice' || !setup.authorName) return;
 
     const today = currentDateKey();
     await context.answerCallbackQuery();
-    await apiClient.updateTelegramUserReportProfile(setup.userId, { reportStartDate: today });
-    await beginReportInSetupCollector(context.api, setup, today);
+    await saveReportStartDate(context.api, setup, today, apiClient);
   });
 
   bot.callbackQuery(/^report:type:(daily|weekly)$/, async context => {
     const session = await activeSession(context);
     if (!session) return;
 
-    session.type = context.match[1] as ReportType;
-    session.step = session.type === 'daily' ? 'daily-priorities' : 'weekly-wins';
-    session.editingItemId = null;
+    setReportType(session, context.match[1] as ReportType);
 
     await context.answerCallbackQuery();
     await refreshCollector(context.api, session);
+  });
+
+  bot.callbackQuery('report:menu:back', async context => {
+    const session = await activeSession(context);
+    if (!session || session.step !== 'choose') return;
+
+    const setup: ReportSetupSession = {
+      userId: session.userId,
+      collector: session.collector,
+      step: 'report-menu',
+      flow: 'settings',
+      authorName: session.authorName,
+      startDate: session.startDate,
+      dailySections: [...session.configuration.dailySections],
+      weeklySections: [...session.configuration.weeklySections],
+      savedDailySections: [...session.configuration.dailySections],
+      savedWeeklySections: [...session.configuration.weeklySections],
+    };
+    sessionsByUserId.delete(session.userId);
+    setupSessionsByUserId.set(session.userId, setup);
+    releaseTextInput(session.userId, 'report');
+    await context.answerCallbackQuery();
+    await showReportMenu(context.api, setup);
   });
 
   bot.callbackQuery('report:cancel', async context => {
@@ -256,9 +478,8 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
       return;
     }
 
-    advanceFromList(session);
     await context.answerCallbackQuery();
-    await refreshCollector(context.api, session);
+    await advanceOrFinishReport(context.api, session);
   });
 
   bot.callbackQuery(itemActionPattern, async context => {
@@ -304,9 +525,8 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
       return;
     }
 
-    advanceFromText(session);
     await context.answerCallbackQuery();
-    await refreshCollector(context.api, session);
+    await advanceOrFinishReport(context.api, session);
   });
 
   bot.callbackQuery(ratingPattern, async context => {
@@ -315,7 +535,7 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
 
     session.daily.rating = Number(context.match[1]);
     await context.answerCallbackQuery();
-    await finishReport(context.api, session);
+    await advanceOrFinishReport(context.api, session);
   });
 
   bot.callbackQuery(/^report:review:(yes|no)$/, async context => {
@@ -324,7 +544,7 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
 
     session.weekly.requestReview = context.match[1] === 'yes';
     await context.answerCallbackQuery();
-    await finishReport(context.api, session);
+    await advanceOrFinishReport(context.api, session);
   });
 
   bot.on('message:text', async (context, next) => {
@@ -434,7 +654,7 @@ function acceptsReportSetupText(
     setup &&
     setup.userId === userId &&
     setup.collector.chatId === chatId &&
-    (setup.step === 'author-name' || setup.step === 'custom-date') &&
+    (setup.step === 'author-name' || setup.step === 'custom-date' || setup.step === 'week-day') &&
     ownsTextInput(userId, 'report') &&
     !input.startsWith('/'),
   );
@@ -463,31 +683,31 @@ async function processReportSetupInput(
       reportAuthorName: authorName,
     });
     setup.authorName = authorName;
-    setup.step = 'date-choice';
-    releaseTextInput(setup.userId, 'report');
-    await telegramApi.editMessageText(
-      setup.collector.chatId,
-      setup.collector.messageId,
-      translate(locale, 'report.setupStartDatePrompt'),
-      { parse_mode: 'HTML', reply_markup: buildReportStartDateKeyboard(locale) },
-    );
+
+    if (setup.flow === 'onboarding' && !setup.startDate) {
+      await showReportDateChoice(telegramApi, setup);
+    } else {
+      await showReportSettings(telegramApi, setup);
+    }
     return true;
   }
 
   const today = currentDateKey();
-  const startDate = parseReportStartDate(input, today);
+  const isWeekDayInput = setup.step === 'week-day';
+  const startDate = isWeekDayInput
+    ? reportStartDateFromWeekDay(input, today)
+    : parseReportStartDate(input, today);
 
   if (!startDate) {
     await sendTemporarySetupNotice(
       telegramApi,
       setup,
-      translate(locale, 'report.setupDateInvalid'),
+      translate(locale, isWeekDayInput ? 'report.setupWeekDayInvalid' : 'report.setupDateInvalid'),
     );
     return false;
   }
 
-  await apiClient.updateTelegramUserReportProfile(setup.userId, { reportStartDate: startDate });
-  await beginReportInSetupCollector(telegramApi, setup, startDate);
+  await saveReportStartDate(telegramApi, setup, startDate, apiClient);
   return true;
 }
 
@@ -717,6 +937,8 @@ async function beginReportInSetupCollector(
     setup.authorName,
     startDate,
     setup.collector,
+    setup.savedDailySections,
+    setup.savedWeeklySections,
   );
   sessionsByUserId.set(setup.userId, session);
   await telegramApi.editMessageText(
@@ -732,12 +954,106 @@ function configuredReportSession(
   authorName: string,
   startDate: string,
   collector: { chatId: number; messageId: number },
+  dailySections: DailyReportSection[],
+  weeklySections: WeeklyReportSection[],
 ): ReportSession {
   return createReportSession(
     userId,
+    authorName,
     buildReportAuthorTag(authorName),
+    startDate,
     collector,
     calculateReportCalendar(currentDateKey(), startDate),
+    { dailySections, weeklySections },
+  );
+}
+
+async function saveReportStartDate(
+  telegramApi: TelegramApi,
+  setup: ReportSetupSession,
+  startDate: string,
+  apiClient: AionApiClient,
+): Promise<void> {
+  await apiClient.updateTelegramUserReportProfile(setup.userId, { reportStartDate: startDate });
+  setup.startDate = startDate;
+
+  if (setup.flow === 'onboarding') {
+    await beginReportInSetupCollector(telegramApi, setup, startDate);
+    return;
+  }
+
+  await showReportSettings(telegramApi, setup);
+}
+
+async function showReportMenu(telegramApi: TelegramApi, setup: ReportSetupSession): Promise<void> {
+  if (!setup.authorName || !setup.startDate) {
+    throw new Error('A configured report profile is required for the report menu');
+  }
+
+  setup.step = 'report-menu';
+  setup.flow = 'settings';
+  releaseTextInput(setup.userId, 'report');
+  const locale = getLocale(setup.userId);
+  await telegramApi.editMessageText(
+    setup.collector.chatId,
+    setup.collector.messageId,
+    renderReportMenu(
+      locale,
+      setup.authorName,
+      setup.startDate,
+      calculateReportCalendar(currentDateKey(), setup.startDate),
+    ),
+    { parse_mode: 'HTML', reply_markup: buildReportMenuKeyboard(locale) },
+  );
+}
+
+async function showReportSettings(
+  telegramApi: TelegramApi,
+  setup: ReportSetupSession,
+): Promise<void> {
+  setup.step = 'settings-menu';
+  setup.flow = 'settings';
+  releaseTextInput(setup.userId, 'report');
+  const locale = getLocale(setup.userId);
+  await telegramApi.editMessageText(
+    setup.collector.chatId,
+    setup.collector.messageId,
+    renderReportSettings(locale),
+    { parse_mode: 'HTML', reply_markup: buildReportSettingsKeyboard(locale) },
+  );
+}
+
+async function showReportDateChoice(
+  telegramApi: TelegramApi,
+  setup: ReportSetupSession,
+): Promise<void> {
+  setup.step = 'date-choice';
+  releaseTextInput(setup.userId, 'report');
+  const locale = getLocale(setup.userId);
+  await telegramApi.editMessageText(
+    setup.collector.chatId,
+    setup.collector.messageId,
+    translate(locale, 'report.setupStartDatePrompt'),
+    { parse_mode: 'HTML', reply_markup: buildReportStartDateKeyboard(locale) },
+  );
+}
+
+async function showReportSectionConfiguration(
+  telegramApi: TelegramApi,
+  setup: ReportSetupSession,
+  type: ReportType,
+): Promise<void> {
+  const locale = getLocale(setup.userId);
+  const sections: ConfiguredReportStep[] =
+    type === 'daily' ? setup.dailySections : setup.weeklySections;
+  await telegramApi.editMessageText(
+    setup.collector.chatId,
+    setup.collector.messageId,
+    renderReportSectionConfiguration(locale, type, sections),
+    {
+      parse_mode: 'HTML',
+      reply_markup: buildReportSectionConfigurationKeyboard(locale, type, sections),
+    },
   );
 }
 
@@ -756,8 +1072,18 @@ async function refreshCollector(telegramApi: TelegramApi, session: ReportSession
 async function finishReport(telegramApi: TelegramApi, session: ReportSession): Promise<void> {
   const report =
     session.type === 'daily'
-      ? formatDailyReport(session.daily, session.calendar, session.authorTag)
-      : formatWeeklyReport(session.weekly, session.calendar, session.authorTag);
+      ? formatDailyReport(
+          session.daily,
+          session.calendar,
+          session.authorTag,
+          session.configuration.dailySections,
+        )
+      : formatWeeklyReport(
+          session.weekly,
+          session.calendar,
+          session.authorTag,
+          session.configuration.weeklySections,
+        );
 
   await telegramApi.sendMessage(session.collector.chatId, report, {
     parse_mode: 'HTML',
@@ -768,6 +1094,18 @@ async function finishReport(telegramApi: TelegramApi, session: ReportSession): P
   await telegramApi
     .deleteMessage(session.collector.chatId, session.collector.messageId)
     .catch(() => undefined);
+}
+
+async function advanceOrFinishReport(
+  telegramApi: TelegramApi,
+  session: ReportSession,
+): Promise<void> {
+  if (advanceReportStep(session)) {
+    await refreshCollector(telegramApi, session);
+    return;
+  }
+
+  await finishReport(telegramApi, session);
 }
 
 function currentDateKey(): string {

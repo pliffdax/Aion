@@ -4,6 +4,56 @@ import { CuidSchema } from './shared';
 export const TelegramLocaleSchema = z.enum(['ru', 'uk', 'en']);
 export type TelegramLocale = z.infer<typeof TelegramLocaleSchema>;
 
+export const TelegramDailyReportSectionSchema = z.enum([
+  'daily-priorities',
+  'daily-event',
+  'daily-conclusion',
+  'daily-tomorrow',
+  'daily-rating',
+]);
+export type TelegramDailyReportSection = z.infer<typeof TelegramDailyReportSectionSchema>;
+
+export const TelegramWeeklyReportSectionSchema = z.enum([
+  'weekly-wins',
+  'weekly-failure',
+  'weekly-insight',
+  'weekly-next',
+  'weekly-review',
+]);
+export type TelegramWeeklyReportSection = z.infer<typeof TelegramWeeklyReportSectionSchema>;
+
+export const DefaultTelegramDailyReportSections: TelegramDailyReportSection[] = [
+  'daily-priorities',
+  'daily-event',
+  'daily-conclusion',
+  'daily-tomorrow',
+  'daily-rating',
+];
+
+export const DefaultTelegramWeeklyReportSections: TelegramWeeklyReportSection[] = [
+  'weekly-wins',
+  'weekly-failure',
+  'weekly-insight',
+  'weekly-next',
+  'weekly-review',
+];
+
+function uniqueReportSections<T extends string>(sections: T[]): boolean {
+  return new Set(sections).size === sections.length;
+}
+
+export const TelegramDailyReportSectionsSchema = z
+  .array(TelegramDailyReportSectionSchema)
+  .min(1)
+  .max(DefaultTelegramDailyReportSections.length)
+  .refine(uniqueReportSections, { message: 'Daily report sections must be unique' });
+
+export const TelegramWeeklyReportSectionsSchema = z
+  .array(TelegramWeeklyReportSectionSchema)
+  .min(1)
+  .max(DefaultTelegramWeeklyReportSections.length)
+  .refine(uniqueReportSections, { message: 'Weekly report sections must be unique' });
+
 const maxPostgresBigInt = 9_223_372_036_854_775_807n;
 
 export const TelegramUserIdSchema = z
@@ -33,6 +83,8 @@ export const TelegramUserDtoSchema = z.object({
   locale: TelegramLocaleSchema,
   reportAuthorName: z.string().max(100).nullable(),
   reportStartDate: TelegramPlanDateSchema.nullable(),
+  reportDailySections: TelegramDailyReportSectionsSchema,
+  reportWeeklySections: TelegramWeeklyReportSectionsSchema,
 });
 export type TelegramUserDto = z.infer<typeof TelegramUserDtoSchema>;
 
@@ -54,10 +106,19 @@ export const UpdateTelegramReportProfileDtoSchema = z
     telegramUserId: TelegramUserIdSchema,
     reportAuthorName: z.string().trim().min(3).max(100).optional(),
     reportStartDate: TelegramPlanDateSchema.optional(),
+    reportDailySections: TelegramDailyReportSectionsSchema.optional(),
+    reportWeeklySections: TelegramWeeklyReportSectionsSchema.optional(),
   })
-  .refine(dto => dto.reportAuthorName !== undefined || dto.reportStartDate !== undefined, {
-    message: 'At least one report profile field must be provided',
-  });
+  .refine(
+    dto =>
+      dto.reportAuthorName !== undefined ||
+      dto.reportStartDate !== undefined ||
+      dto.reportDailySections !== undefined ||
+      dto.reportWeeklySections !== undefined,
+    {
+      message: 'At least one report profile field must be provided',
+    },
+  );
 export type UpdateTelegramReportProfileDto = z.infer<typeof UpdateTelegramReportProfileDtoSchema>;
 
 export const TelegramDailyPlanItemDtoSchema = z.object({

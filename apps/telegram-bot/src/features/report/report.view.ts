@@ -1,17 +1,119 @@
 import { InlineKeyboard } from 'grammy';
+import { v1 } from '@aion/contracts';
 import { escapeHtml } from '../../core/formatting/html.js';
 import { getLocale, translate, type Locale } from '../../core/i18n/i18n.js';
-import type { ReportItem } from './report.formatter.js';
+import type { ReportCalendar, ReportItem } from './report.formatter.js';
 import {
   currentItems,
   currentText,
   isListStep,
   isTextStep,
+  reportStepPosition,
   statusMarker,
-  stepProgress,
   stepTitleKey,
+  type ConfiguredReportStep,
   type ReportSession,
+  type ReportType,
 } from './report.session.js';
+
+export function renderReportMenu(
+  locale: Locale,
+  authorName: string,
+  startDate: string,
+  calendar: Pick<ReportCalendar, 'week' | 'day'>,
+): string {
+  return translate(locale, 'report.menuTitle', {
+    author: escapeHtml(authorName),
+    date: formatDate(startDate),
+    week: calendar.week,
+    day: calendar.day,
+  });
+}
+
+export function buildReportMenuKeyboard(locale: Locale): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(translate(locale, 'report.start'), 'report:menu:start')
+    .row()
+    .text(translate(locale, 'report.settings'), 'report:menu:settings')
+    .row()
+    .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+}
+
+export function renderReportSettings(locale: Locale): string {
+  return translate(locale, 'report.settingsTitle');
+}
+
+export function buildReportSettingsKeyboard(locale: Locale): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(translate(locale, 'report.editAuthor'), 'report:settings:author')
+    .row()
+    .text(translate(locale, 'report.editCalendar'), 'report:settings:calendar')
+    .row()
+    .text(translate(locale, 'report.dailyStructure'), 'report:settings:daily')
+    .row()
+    .text(translate(locale, 'report.weeklyStructure'), 'report:settings:weekly')
+    .row()
+    .text(translate(locale, 'report.back'), 'report:settings:back')
+    .row()
+    .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+}
+
+export function renderReportSectionConfiguration(
+  locale: Locale,
+  type: ReportType,
+  activeSections: ConfiguredReportStep[],
+): string {
+  const typeLabel = translate(locale, type === 'daily' ? 'report.daily' : 'report.weekly');
+  const sectionLines = activeSections.map(
+    (section, index) => `${index + 1}. ${translate(locale, stepTitleKey(section))}`,
+  );
+
+  return [
+    translate(locale, 'report.configurationTitle', { type: typeLabel }),
+    '',
+    translate(locale, 'report.configurationHint'),
+    '',
+    ...sectionLines,
+  ].join('\n');
+}
+
+export function buildReportSectionConfigurationKeyboard(
+  locale: Locale,
+  type: ReportType,
+  activeSections: ConfiguredReportStep[],
+): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+  const availableSections =
+    type === 'daily'
+      ? v1.DefaultTelegramDailyReportSections
+      : v1.DefaultTelegramWeeklyReportSections;
+
+  for (const section of availableSections) {
+    const activeIndex = activeSections.indexOf(section);
+    const marker = activeIndex >= 0 ? '✅' : '⬜';
+    const position = activeIndex >= 0 ? `${activeIndex + 1}. ` : '';
+    keyboard
+      .text(
+        `${marker} ${position}${translate(locale, stepTitleKey(section))}`,
+        `report:config:${type}:toggle:${section}`,
+      )
+      .row();
+
+    if (activeIndex >= 0) {
+      keyboard
+        .text('⬆️', `report:config:${type}:up:${section}`)
+        .text('⬇️', `report:config:${type}:down:${section}`)
+        .row();
+    }
+  }
+
+  return keyboard
+    .text(translate(locale, 'report.save'), `report:config:${type}:save`)
+    .row()
+    .text(translate(locale, 'report.back'), 'report:settings:back')
+    .row()
+    .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+}
 
 export function renderCollector(session: ReportSession): string {
   const locale = getLocale(session.userId);
@@ -21,8 +123,9 @@ export function renderCollector(session: ReportSession): string {
   }
 
   const typeLabel = translate(locale, session.type === 'daily' ? 'report.daily' : 'report.weekly');
+  const progress = reportStepPosition(session);
   const lines = [
-    `<b>${typeLabel}</b> · <code>${stepProgress(session.step)}/5</code>`,
+    `<b>${typeLabel}</b> · <code>${progress.current}/${progress.total}</code>`,
     `<b>${translate(locale, stepTitleKey(session.step))}</b>`,
     '',
   ];
@@ -46,6 +149,8 @@ export function buildTypeKeyboard(locale: Locale): InlineKeyboard {
     .text(translate(locale, 'report.daily'), 'report:type:daily')
     .text(translate(locale, 'report.weekly'), 'report:type:weekly')
     .row()
+    .text(translate(locale, 'report.back'), 'report:menu:back')
+    .row()
     .text(translate(locale, 'report.cancel'), 'report:cancel');
 }
 
@@ -63,11 +168,18 @@ export function buildReportSetupBackAndCancelKeyboard(locale: Locale): InlineKey
 export function buildReportStartDateKeyboard(locale: Locale): InlineKeyboard {
   return new InlineKeyboard()
     .text(translate(locale, 'report.setupCustomDate'), 'report:setup:date:custom')
+    .row()
+    .text(translate(locale, 'report.setupWeekDay'), 'report:setup:date:week-day')
+    .row()
     .text(translate(locale, 'report.setupToday'), 'report:setup:date:today')
     .row()
     .text(translate(locale, 'report.back'), 'report:setup:back')
     .row()
     .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+}
+
+function formatDate(date: string): string {
+  return date.split('-').reverse().join('.');
 }
 
 function renderStepContent(session: ReportSession, locale: Locale): string[] {

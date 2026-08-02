@@ -66,6 +66,12 @@ export class TelegramService {
     const reportProfile = {
       ...(dto.reportAuthorName !== undefined ? { reportAuthorName: dto.reportAuthorName } : {}),
       ...(reportStartDate !== undefined ? { reportStartDate } : {}),
+      ...(dto.reportDailySections !== undefined
+        ? { reportDailySections: dto.reportDailySections }
+        : {}),
+      ...(dto.reportWeeklySections !== undefined
+        ? { reportWeeklySections: dto.reportWeeklySections }
+        : {}),
     };
     const user = await this.prisma.telegramUser.upsert({
       where: { telegramId },
@@ -557,6 +563,8 @@ function toTelegramUserDto(user: {
   locale: TelegramLocale;
   reportAuthorName: string | null;
   reportStartDate: Date | null;
+  reportDailySections: string[];
+  reportWeeklySections: string[];
 }): v1.TelegramUserDto {
   return {
     id: user.id,
@@ -566,6 +574,8 @@ function toTelegramUserDto(user: {
     locale: user.locale.toLowerCase() as v1.TelegramLocale,
     reportAuthorName: user.reportAuthorName,
     reportStartDate: user.reportStartDate?.toISOString().slice(0, 10) ?? null,
+    reportDailySections: v1.TelegramDailyReportSectionsSchema.parse(user.reportDailySections),
+    reportWeeklySections: v1.TelegramWeeklyReportSectionsSchema.parse(user.reportWeeklySections),
   };
 }
 

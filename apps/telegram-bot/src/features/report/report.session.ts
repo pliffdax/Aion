@@ -1,3 +1,4 @@
+import type { v1 } from '@aion/contracts';
 import type { TranslationKey } from '../../core/i18n/i18n.js';
 import type {
   DailyReportDraft,
@@ -7,19 +8,16 @@ import type {
   WeeklyReportDraft,
 } from './report.formatter.js';
 
+export type DailyReportSection = v1.TelegramDailyReportSection;
+export type WeeklyReportSection = v1.TelegramWeeklyReportSection;
+export type ConfiguredReportStep = DailyReportSection | WeeklyReportSection;
 export type ReportType = 'daily' | 'weekly';
-export type ReportStep =
-  | 'choose'
-  | 'daily-priorities'
-  | 'daily-event'
-  | 'daily-conclusion'
-  | 'daily-tomorrow'
-  | 'daily-rating'
-  | 'weekly-wins'
-  | 'weekly-failure'
-  | 'weekly-insight'
-  | 'weekly-next'
-  | 'weekly-review';
+export type ReportStep = 'choose' | ConfiguredReportStep;
+
+export interface ReportConfiguration {
+  dailySections: DailyReportSection[];
+  weeklySections: WeeklyReportSection[];
+}
 
 export interface MessageReference {
   chatId: number;
@@ -28,11 +26,14 @@ export interface MessageReference {
 
 export interface ReportSession {
   userId: number;
+  authorName: string;
   authorTag: string;
+  startDate: string;
   type: ReportType | null;
   step: ReportStep;
   collector: MessageReference;
   calendar: ReportCalendar;
+  configuration: ReportConfiguration;
   editingItemId: number | null;
   nextItemId: number;
   daily: DailyReportDraft;
@@ -41,17 +42,26 @@ export interface ReportSession {
 
 export function createReportSession(
   userId: number,
+  authorName: string,
   authorTag: string,
+  startDate: string,
   collector: MessageReference,
   calendar: ReportCalendar,
+  configuration: ReportConfiguration,
 ): ReportSession {
   return {
     userId,
+    authorName,
     authorTag,
+    startDate,
     type: null,
     step: 'choose',
     collector,
     calendar,
+    configuration: {
+      dailySections: [...configuration.dailySections],
+      weeklySections: [...configuration.weeklySections],
+    },
     editingItemId: null,
     nextItemId: 1,
     daily: {
@@ -68,6 +78,57 @@ export function createReportSession(
       nextWeek: [],
       requestReview: null,
     },
+  };
+}
+
+export function setReportType(session: ReportSession, type: ReportType): void {
+  session.type = type;
+  session.step = sectionsForType(session, type)[0];
+  session.editingItemId = null;
+}
+
+export function sectionsForType(session: ReportSession, type: ReportType): ConfiguredReportStep[] {
+  return type === 'daily'
+    ? session.configuration.dailySections
+    : session.configuration.weeklySections;
+}
+
+export function advanceReportStep(session: ReportSession): boolean {
+  if (!session.type || session.step === 'choose') return false;
+
+  const sections = sectionsForType(session, session.type);
+  const currentIndex = sections.indexOf(session.step);
+  const nextStep = sections[currentIndex + 1];
+  if (!nextStep) return false;
+
+  session.editingItemId = null;
+  session.step = nextStep;
+  return true;
+}
+
+export function retreatReportStep(session: ReportSession): void {
+  if (!session.type || session.step === 'choose') return;
+
+  const sections = sectionsForType(session, session.type);
+  const currentIndex = sections.indexOf(session.step);
+  session.editingItemId = null;
+
+  if (currentIndex <= 0) {
+    session.step = 'choose';
+    session.type = null;
+    return;
+  }
+
+  session.step = sections[currentIndex - 1];
+}
+
+export function reportStepPosition(session: ReportSession): { current: number; total: number } {
+  if (!session.type || session.step === 'choose') return { current: 0, total: 0 };
+
+  const sections = sectionsForType(session, session.type);
+  return {
+    current: sections.indexOf(session.step) + 1,
+    total: sections.length,
   };
 }
 
@@ -112,52 +173,8 @@ export function setCurrentText(session: ReportSession, value: string): void {
   setters[session.step]?.();
 }
 
-export function advanceFromList(session: ReportSession): void {
-  const nextSteps: Partial<Record<ReportStep, ReportStep>> = {
-    'daily-priorities': 'daily-event',
-    'daily-tomorrow': 'daily-rating',
-    'weekly-wins': 'weekly-failure',
-    'weekly-next': 'weekly-review',
-  };
-
-  session.step = nextSteps[session.step] ?? session.step;
-}
-
-export function advanceFromText(session: ReportSession): void {
-  const nextSteps: Partial<Record<ReportStep, ReportStep>> = {
-    'daily-event': 'daily-conclusion',
-    'daily-conclusion': 'daily-tomorrow',
-    'weekly-failure': 'weekly-insight',
-    'weekly-insight': 'weekly-next',
-  };
-
-  session.step = nextSteps[session.step] ?? session.step;
-}
-
-export function retreatReportStep(session: ReportSession): void {
-  const previousSteps: Partial<Record<ReportStep, ReportStep>> = {
-    'daily-priorities': 'choose',
-    'daily-event': 'daily-priorities',
-    'daily-conclusion': 'daily-event',
-    'daily-tomorrow': 'daily-conclusion',
-    'daily-rating': 'daily-tomorrow',
-    'weekly-wins': 'choose',
-    'weekly-failure': 'weekly-wins',
-    'weekly-insight': 'weekly-failure',
-    'weekly-next': 'weekly-insight',
-    'weekly-review': 'weekly-next',
-  };
-
-  session.editingItemId = null;
-  session.step = previousSteps[session.step] ?? session.step;
-
-  if (session.step === 'choose') {
-    session.type = null;
-  }
-}
-
-export function stepTitleKey(step: Exclude<ReportStep, 'choose'>): TranslationKey {
-  const keys: Record<Exclude<ReportStep, 'choose'>, TranslationKey> = {
+export function stepTitleKey(step: ConfiguredReportStep): TranslationKey {
+  const keys: Record<ConfiguredReportStep, TranslationKey> = {
     'daily-priorities': 'report.dailyPriorities',
     'daily-event': 'report.dailyEvent',
     'daily-conclusion': 'report.dailyConclusion',
@@ -171,23 +188,6 @@ export function stepTitleKey(step: Exclude<ReportStep, 'choose'>): TranslationKe
   };
 
   return keys[step];
-}
-
-export function stepProgress(step: Exclude<ReportStep, 'choose'>): number {
-  const steps: Record<Exclude<ReportStep, 'choose'>, number> = {
-    'daily-priorities': 1,
-    'daily-event': 2,
-    'daily-conclusion': 3,
-    'daily-tomorrow': 4,
-    'daily-rating': 5,
-    'weekly-wins': 1,
-    'weekly-failure': 2,
-    'weekly-insight': 3,
-    'weekly-next': 4,
-    'weekly-review': 5,
-  };
-
-  return steps[step];
 }
 
 export function parseItems(input: string): string[] {

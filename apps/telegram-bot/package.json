@@ -11,6 +11,7 @@
     "dev": "tsx watch src/index.ts",
     "dev:test": "MODE=test tsx watch src/index.ts",
     "lint": "eslint .",
+    "test": "tsx --test src/features/report/*.spec.ts",
     "format": "prettier . --write --ignore-path ../../.prettierignore",
     "format:check": "prettier . --check --ignore-path ../../.prettierignore",
     "typecheck": "tsc -p tsconfig.json --noEmit"
