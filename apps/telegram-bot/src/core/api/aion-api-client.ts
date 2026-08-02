@@ -37,7 +37,7 @@ export class AionApiClient {
 
   updateTelegramUserReportProfile(
     telegramUserId: number,
-    fields: { reportAuthorName?: string; reportStartDate?: string },
+    fields: Omit<v1.UpdateTelegramReportProfileDto, 'telegramUserId'>,
   ): Promise<v1.TelegramUserDto> {
     return this.request('/telegram/users/report-profile', v1.TelegramUserDtoSchema, 'PATCH', {
       telegramUserId: String(telegramUserId),

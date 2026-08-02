@@ -49,7 +49,12 @@ export class TelegramService {
     const locale = toPrismaLocale(dto.locale);
     const user = await this.prisma.telegramUser.upsert({
       where: { telegramId },
-      create: { telegramId, locale },
+      create: {
+        telegramId,
+        locale,
+        reportDailySections: defaultDailyReportFields(),
+        reportWeeklySections: defaultWeeklyReportFields(),
+      },
       update: { locale },
     });
 
@@ -66,10 +71,30 @@ export class TelegramService {
     const reportProfile = {
       ...(dto.reportAuthorName !== undefined ? { reportAuthorName: dto.reportAuthorName } : {}),
       ...(reportStartDate !== undefined ? { reportStartDate } : {}),
+      ...(dto.reportDailySections !== undefined
+        ? { reportDailySections: dto.reportDailySections as Prisma.InputJsonValue }
+        : {}),
+      ...(dto.reportWeeklySections !== undefined
+        ? { reportWeeklySections: dto.reportWeeklySections as Prisma.InputJsonValue }
+        : {}),
     };
     const user = await this.prisma.telegramUser.upsert({
       where: { telegramId },
-      create: { telegramId, ...reportProfile },
+      create: {
+        telegramId,
+        reportDailySections:
+          (reportProfile.reportDailySections as Prisma.InputJsonValue | undefined) ??
+          defaultDailyReportFields(),
+        reportWeeklySections:
+          (reportProfile.reportWeeklySections as Prisma.InputJsonValue | undefined) ??
+          defaultWeeklyReportFields(),
+        ...(reportProfile.reportAuthorName !== undefined
+          ? { reportAuthorName: reportProfile.reportAuthorName }
+          : {}),
+        ...(reportProfile.reportStartDate !== undefined
+          ? { reportStartDate: reportProfile.reportStartDate }
+          : {}),
+      },
       update: reportProfile,
     });
 
@@ -404,12 +429,22 @@ async function upsertTelegramUser(database: DatabaseClient, dto: v1.UpsertTelegr
       telegramId,
       username: dto.username ?? null,
       firstName: dto.firstName ?? null,
+      reportDailySections: defaultDailyReportFields(),
+      reportWeeklySections: defaultWeeklyReportFields(),
     },
     update: {
       ...(dto.username !== undefined ? { username: dto.username } : {}),
       ...(dto.firstName !== undefined ? { firstName: dto.firstName } : {}),
     },
   });
+}
+
+function defaultDailyReportFields(): Prisma.InputJsonValue {
+  return v1.DefaultTelegramDailyReportSections as Prisma.InputJsonValue;
+}
+
+function defaultWeeklyReportFields(): Prisma.InputJsonValue {
+  return v1.DefaultTelegramWeeklyReportSections as Prisma.InputJsonValue;
 }
 
 async function findOwnedReminder(
@@ -557,6 +592,8 @@ function toTelegramUserDto(user: {
   locale: TelegramLocale;
   reportAuthorName: string | null;
   reportStartDate: Date | null;
+  reportDailySections: Prisma.JsonValue;
+  reportWeeklySections: Prisma.JsonValue;
 }): v1.TelegramUserDto {
   return {
     id: user.id,
@@ -566,6 +603,8 @@ function toTelegramUserDto(user: {
     locale: user.locale.toLowerCase() as v1.TelegramLocale,
     reportAuthorName: user.reportAuthorName,
     reportStartDate: user.reportStartDate?.toISOString().slice(0, 10) ?? null,
+    reportDailySections: v1.TelegramDailyReportSectionsSchema.parse(user.reportDailySections),
+    reportWeeklySections: v1.TelegramWeeklyReportSectionsSchema.parse(user.reportWeeklySections),
   };
 }
 

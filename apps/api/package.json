@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "nest start --watch",
-    "dev:test": "MODE=test PORT=3001 nest start --watch",
+    "dev:test": "MODE=test PORT=3002 nest start --watch",
     "build": "nest build -p tsconfig.build.json",
     "start": "node dist/main.js",
     "start:prod": "node dist/main.js",

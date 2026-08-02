@@ -4,6 +4,139 @@ import { CuidSchema } from './shared';
 export const TelegramLocaleSchema = z.enum(['ru', 'uk', 'en']);
 export type TelegramLocale = z.infer<typeof TelegramLocaleSchema>;
 
+export const TelegramReportFieldInputTypeSchema = z.enum(['text', 'list', 'rating', 'boolean']);
+export type TelegramReportFieldInputType = z.infer<typeof TelegramReportFieldInputTypeSchema>;
+
+export const TelegramReportListStyleSchema = z.enum(['dash', 'numbered', 'status']);
+export type TelegramReportListStyle = z.infer<typeof TelegramReportListStyleSchema>;
+
+export const TelegramReportFieldSchema = z
+  .object({
+    id: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/),
+    title: z.string().trim().min(1).max(80),
+    prompt: z.string().trim().max(240),
+    inputType: TelegramReportFieldInputTypeSchema,
+    listStyle: TelegramReportListStyleSchema.nullable(),
+    required: z.boolean(),
+  })
+  .superRefine((field, context) => {
+    if (field.inputType === 'list' && field.listStyle === null) {
+      context.addIssue({
+        code: 'custom',
+        path: ['listStyle'],
+        message: 'List fields require a list style',
+      });
+    }
+
+    if (field.inputType !== 'list' && field.listStyle !== null) {
+      context.addIssue({
+        code: 'custom',
+        path: ['listStyle'],
+        message: 'Only list fields can have a list style',
+      });
+    }
+  });
+export type TelegramReportField = z.infer<typeof TelegramReportFieldSchema>;
+
+export const DefaultTelegramDailyReportSections: TelegramReportField[] = [
+  {
+    id: 'daily-priorities',
+    title: 'Приоритет дня',
+    prompt: 'Добавьте приоритеты дня и отметьте их статус.',
+    inputType: 'list',
+    listStyle: 'status',
+    required: true,
+  },
+  {
+    id: 'daily-event',
+    title: 'Событие дня',
+    prompt: 'Опишите главное событие дня.',
+    inputType: 'text',
+    listStyle: null,
+    required: true,
+  },
+  {
+    id: 'daily-conclusion',
+    title: 'Вывод дня',
+    prompt: 'Напишите основной вывод дня.',
+    inputType: 'text',
+    listStyle: null,
+    required: true,
+  },
+  {
+    id: 'daily-tomorrow',
+    title: 'Главные задачи на завтра',
+    prompt: 'Добавьте задачи на следующий день.',
+    inputType: 'list',
+    listStyle: 'dash',
+    required: true,
+  },
+  {
+    id: 'daily-rating',
+    title: 'Счастье',
+    prompt: 'Оцените день от 1 до 10.',
+    inputType: 'rating',
+    listStyle: null,
+    required: true,
+  },
+];
+
+export const DefaultTelegramWeeklyReportSections: TelegramReportField[] = [
+  {
+    id: 'weekly-wins',
+    title: 'Победы недели',
+    prompt: 'Перечислите победы недели.',
+    inputType: 'list',
+    listStyle: 'numbered',
+    required: true,
+  },
+  {
+    id: 'weekly-failure',
+    title: 'Провал недели',
+    prompt: 'Опишите главный провал недели.',
+    inputType: 'text',
+    listStyle: null,
+    required: true,
+  },
+  {
+    id: 'weekly-insight',
+    title: 'Инсайт недели',
+    prompt: 'Запишите главный инсайт недели.',
+    inputType: 'text',
+    listStyle: null,
+    required: true,
+  },
+  {
+    id: 'weekly-next',
+    title: 'План на следующую неделю',
+    prompt: 'Перечислите задачи следующей недели.',
+    inputType: 'list',
+    listStyle: 'numbered',
+    required: true,
+  },
+  {
+    id: 'weekly-review',
+    title: 'Прошу на разбор',
+    prompt: 'Нужно ли разобрать этот отчёт?',
+    inputType: 'boolean',
+    listStyle: null,
+    required: true,
+  },
+];
+
+function uniqueReportFields(fields: TelegramReportField[]): boolean {
+  return new Set(fields.map(field => field.id)).size === fields.length;
+}
+
+export const TelegramReportSectionsSchema = z
+  .array(TelegramReportFieldSchema)
+  .min(1)
+  .max(12)
+  .refine(uniqueReportFields, { message: 'Report field IDs must be unique' });
+
+export const TelegramDailyReportSectionsSchema = TelegramReportSectionsSchema;
+export const TelegramWeeklyReportSectionsSchema = TelegramReportSectionsSchema;
+
 const maxPostgresBigInt = 9_223_372_036_854_775_807n;
 
 export const TelegramUserIdSchema = z
@@ -33,6 +166,8 @@ export const TelegramUserDtoSchema = z.object({
   locale: TelegramLocaleSchema,
   reportAuthorName: z.string().max(100).nullable(),
   reportStartDate: TelegramPlanDateSchema.nullable(),
+  reportDailySections: TelegramDailyReportSectionsSchema,
+  reportWeeklySections: TelegramWeeklyReportSectionsSchema,
 });
 export type TelegramUserDto = z.infer<typeof TelegramUserDtoSchema>;
 
@@ -54,10 +189,19 @@ export const UpdateTelegramReportProfileDtoSchema = z
     telegramUserId: TelegramUserIdSchema,
     reportAuthorName: z.string().trim().min(3).max(100).optional(),
     reportStartDate: TelegramPlanDateSchema.optional(),
+    reportDailySections: TelegramDailyReportSectionsSchema.optional(),
+    reportWeeklySections: TelegramWeeklyReportSectionsSchema.optional(),
   })
-  .refine(dto => dto.reportAuthorName !== undefined || dto.reportStartDate !== undefined, {
-    message: 'At least one report profile field must be provided',
-  });
+  .refine(
+    dto =>
+      dto.reportAuthorName !== undefined ||
+      dto.reportStartDate !== undefined ||
+      dto.reportDailySections !== undefined ||
+      dto.reportWeeklySections !== undefined,
+    {
+      message: 'At least one report profile field must be provided',
+    },
+  );
 export type UpdateTelegramReportProfileDto = z.infer<typeof UpdateTelegramReportProfileDtoSchema>;
 
 export const TelegramDailyPlanItemDtoSchema = z.object({
