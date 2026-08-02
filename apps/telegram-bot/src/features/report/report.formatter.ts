@@ -1,3 +1,4 @@
+import type { v1 } from '@aion/contracts';
 import { escapeHtml } from '../../core/formatting/html.js';
 
 const millisecondsPerDay = 86_400_000;
@@ -10,26 +11,17 @@ export interface ReportItem {
   status: ReportItemStatus;
 }
 
+export interface ReportFieldAnswer {
+  text: string;
+  items: ReportItem[];
+  rating: number | null;
+  boolean: boolean | null;
+}
+
 export interface ReportCalendar {
   date: string;
   week: number;
   day: number;
-}
-
-export interface DailyReportDraft {
-  priorities: ReportItem[];
-  event: string;
-  conclusion: string;
-  tomorrow: ReportItem[];
-  rating: number | null;
-}
-
-export interface WeeklyReportDraft {
-  wins: ReportItem[];
-  failure: string;
-  insight: string;
-  nextWeek: ReportItem[];
-  requestReview: boolean | null;
 }
 
 export function calculateReportCalendar(date: string, startDate: string): ReportCalendar {
@@ -50,12 +42,10 @@ export function calculateReportCalendar(date: string, startDate: string): Report
 }
 
 export function formatDailyReport(
-  draft: DailyReportDraft,
+  answers: Record<string, ReportFieldAnswer>,
   calendar: ReportCalendar,
   authorTag: string,
-  sections: Array<
-    'daily-priorities' | 'daily-event' | 'daily-conclusion' | 'daily-tomorrow' | 'daily-rating'
-  >,
+  fields: v1.TelegramReportField[],
 ): string {
   const date = calendar.date.split('-').reverse().join('.');
 
@@ -64,77 +54,76 @@ export function formatDailyReport(
     `<b>${escapeHtml(authorTag)}</b>`,
     `<b>#Неделя${calendar.week} #День${calendar.day}</b>`,
     '',
-    ...joinReportSections(sections.map(section => formatDailySection(section, draft))),
+    ...formatFields(fields, answers),
   ].join('\n');
 }
 
 export function formatWeeklyReport(
-  draft: WeeklyReportDraft,
+  answers: Record<string, ReportFieldAnswer>,
   calendar: ReportCalendar,
   authorTag: string,
-  sections: Array<
-    'weekly-wins' | 'weekly-failure' | 'weekly-insight' | 'weekly-next' | 'weekly-review'
-  >,
+  fields: v1.TelegramReportField[],
 ): string {
   return [
     `<b>Неделя ${calendar.week}</b>`,
     `<b>${escapeHtml(authorTag)} #Сводка</b>`,
     '',
-    ...joinReportSections(sections.map(section => formatWeeklySection(section, draft))),
+    ...formatFields(fields, answers),
   ].join('\n');
 }
 
-function formatDailySection(
-  section:
-    'daily-priorities' | 'daily-event' | 'daily-conclusion' | 'daily-tomorrow' | 'daily-rating',
-  draft: DailyReportDraft,
+function formatFields(
+  fields: v1.TelegramReportField[],
+  answers: Record<string, ReportFieldAnswer>,
 ): string[] {
-  switch (section) {
-    case 'daily-priorities':
-      return [
-        '<b>Приоритет дня:</b>',
-        ...draft.priorities.map(item => `– ${escapeHtml(item.text)} ${statusMarker(item.status)}`),
-      ];
-    case 'daily-event':
-      return ['<b>Событие дня:</b>', escapeHtml(draft.event)];
-    case 'daily-conclusion':
-      return ['<b>Вывод дня:</b>', escapeHtml(draft.conclusion)];
-    case 'daily-tomorrow':
-      return [
-        '<b>Главные задачи на завтра:</b>',
-        ...draft.tomorrow.map(item => `– ${escapeHtml(item.text)}`),
-      ];
-    case 'daily-rating':
-      return [`Счастье: ${draft.rating ?? 0}/10`];
+  const lines: string[] = [];
+
+  for (const field of fields) {
+    const answer = answers[field.id] ?? emptyAnswer();
+    if (!field.required && !hasAnswer(field, answer)) continue;
+
+    if (lines.length > 0) lines.push('');
+    lines.push(...formatField(field, answer));
+  }
+
+  return lines;
+}
+
+function hasAnswer(field: v1.TelegramReportField, answer: ReportFieldAnswer): boolean {
+  switch (field.inputType) {
+    case 'text':
+      return answer.text.trim().length > 0;
+    case 'list':
+      return answer.items.length > 0;
+    case 'rating':
+      return answer.rating !== null;
+    case 'boolean':
+      return answer.boolean !== null;
   }
 }
 
-function formatWeeklySection(
-  section: 'weekly-wins' | 'weekly-failure' | 'weekly-insight' | 'weekly-next' | 'weekly-review',
-  draft: WeeklyReportDraft,
-): string[] {
-  switch (section) {
-    case 'weekly-wins':
-      return [
-        `<b>${victoryHeading(draft.wins.length)}:</b>`,
-        ...draft.wins.map((item, index) => `${index + 1}. ${escapeHtml(item.text)}`),
-      ];
-    case 'weekly-failure':
-      return ['<b>1 провал:</b>', escapeHtml(draft.failure)];
-    case 'weekly-insight':
-      return ['<b>Инсайт недели:</b>', escapeHtml(draft.insight)];
-    case 'weekly-next':
-      return [
-        '<b>План на следующую неделю:</b>',
-        ...draft.nextWeek.map((item, index) => `${index + 1}. ${escapeHtml(item.text)}`),
-      ];
-    case 'weekly-review':
-      return ['<b>Прошу на разбор:</b>', draft.requestReview ? 'Да.' : 'Нет.'];
+function formatField(field: v1.TelegramReportField, answer: ReportFieldAnswer): string[] {
+  const title = escapeHtml(field.title);
+
+  switch (field.inputType) {
+    case 'text':
+      return [`<b>${title}:</b>`, escapeHtml(answer.text)];
+    case 'list':
+      return [`<b>${title}:</b>`, ...formatList(field.listStyle, answer.items)];
+    case 'rating':
+      return [`${title}: ${answer.rating ?? 0}/10`];
+    case 'boolean':
+      return [`<b>${title}:</b>`, answer.boolean ? 'Да.' : 'Нет.'];
   }
 }
 
-function joinReportSections(sections: string[][]): string[] {
-  return sections.flatMap((section, index) => (index === 0 ? section : ['', ...section]));
+function formatList(style: v1.TelegramReportListStyle | null, items: ReportItem[]): string[] {
+  return items.map((item, index) => {
+    const text = escapeHtml(item.text);
+    if (style === 'numbered') return `${index + 1}. ${text}`;
+    if (style === 'status') return `– ${text} ${statusMarker(item.status)}`;
+    return `– ${text}`;
+  });
 }
 
 function statusMarker(status: ReportItemStatus): string {
@@ -148,12 +137,6 @@ function statusMarker(status: ReportItemStatus): string {
   }
 }
 
-function victoryHeading(count: number): string {
-  const lastTwoDigits = count % 100;
-  const lastDigit = count % 10;
-
-  if (lastTwoDigits >= 11 && lastTwoDigits <= 14) return `${count} побед`;
-  if (lastDigit === 1) return `${count} победа`;
-  if (lastDigit >= 2 && lastDigit <= 4) return `${count} победы`;
-  return `${count} побед`;
+function emptyAnswer(): ReportFieldAnswer {
+  return { text: '', items: [], rating: null, boolean: null };
 }

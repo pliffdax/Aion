@@ -4,55 +4,138 @@ import { CuidSchema } from './shared';
 export const TelegramLocaleSchema = z.enum(['ru', 'uk', 'en']);
 export type TelegramLocale = z.infer<typeof TelegramLocaleSchema>;
 
-export const TelegramDailyReportSectionSchema = z.enum([
-  'daily-priorities',
-  'daily-event',
-  'daily-conclusion',
-  'daily-tomorrow',
-  'daily-rating',
-]);
-export type TelegramDailyReportSection = z.infer<typeof TelegramDailyReportSectionSchema>;
+export const TelegramReportFieldInputTypeSchema = z.enum(['text', 'list', 'rating', 'boolean']);
+export type TelegramReportFieldInputType = z.infer<typeof TelegramReportFieldInputTypeSchema>;
 
-export const TelegramWeeklyReportSectionSchema = z.enum([
-  'weekly-wins',
-  'weekly-failure',
-  'weekly-insight',
-  'weekly-next',
-  'weekly-review',
-]);
-export type TelegramWeeklyReportSection = z.infer<typeof TelegramWeeklyReportSectionSchema>;
+export const TelegramReportListStyleSchema = z.enum(['dash', 'numbered', 'status']);
+export type TelegramReportListStyle = z.infer<typeof TelegramReportListStyleSchema>;
 
-export const DefaultTelegramDailyReportSections: TelegramDailyReportSection[] = [
-  'daily-priorities',
-  'daily-event',
-  'daily-conclusion',
-  'daily-tomorrow',
-  'daily-rating',
+export const TelegramReportFieldSchema = z
+  .object({
+    id: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/),
+    title: z.string().trim().min(1).max(80),
+    prompt: z.string().trim().max(240),
+    inputType: TelegramReportFieldInputTypeSchema,
+    listStyle: TelegramReportListStyleSchema.nullable(),
+    required: z.boolean(),
+  })
+  .superRefine((field, context) => {
+    if (field.inputType === 'list' && field.listStyle === null) {
+      context.addIssue({
+        code: 'custom',
+        path: ['listStyle'],
+        message: 'List fields require a list style',
+      });
+    }
+
+    if (field.inputType !== 'list' && field.listStyle !== null) {
+      context.addIssue({
+        code: 'custom',
+        path: ['listStyle'],
+        message: 'Only list fields can have a list style',
+      });
+    }
+  });
+export type TelegramReportField = z.infer<typeof TelegramReportFieldSchema>;
+
+export const DefaultTelegramDailyReportSections: TelegramReportField[] = [
+  {
+    id: 'daily-priorities',
+    title: 'Приоритет дня',
+    prompt: 'Добавьте приоритеты дня и отметьте их статус.',
+    inputType: 'list',
+    listStyle: 'status',
+    required: true,
+  },
+  {
+    id: 'daily-event',
+    title: 'Событие дня',
+    prompt: 'Опишите главное событие дня.',
+    inputType: 'text',
+    listStyle: null,
+    required: true,
+  },
+  {
+    id: 'daily-conclusion',
+    title: 'Вывод дня',
+    prompt: 'Напишите основной вывод дня.',
+    inputType: 'text',
+    listStyle: null,
+    required: true,
+  },
+  {
+    id: 'daily-tomorrow',
+    title: 'Главные задачи на завтра',
+    prompt: 'Добавьте задачи на следующий день.',
+    inputType: 'list',
+    listStyle: 'dash',
+    required: true,
+  },
+  {
+    id: 'daily-rating',
+    title: 'Счастье',
+    prompt: 'Оцените день от 1 до 10.',
+    inputType: 'rating',
+    listStyle: null,
+    required: true,
+  },
 ];
 
-export const DefaultTelegramWeeklyReportSections: TelegramWeeklyReportSection[] = [
-  'weekly-wins',
-  'weekly-failure',
-  'weekly-insight',
-  'weekly-next',
-  'weekly-review',
+export const DefaultTelegramWeeklyReportSections: TelegramReportField[] = [
+  {
+    id: 'weekly-wins',
+    title: 'Победы недели',
+    prompt: 'Перечислите победы недели.',
+    inputType: 'list',
+    listStyle: 'numbered',
+    required: true,
+  },
+  {
+    id: 'weekly-failure',
+    title: 'Провал недели',
+    prompt: 'Опишите главный провал недели.',
+    inputType: 'text',
+    listStyle: null,
+    required: true,
+  },
+  {
+    id: 'weekly-insight',
+    title: 'Инсайт недели',
+    prompt: 'Запишите главный инсайт недели.',
+    inputType: 'text',
+    listStyle: null,
+    required: true,
+  },
+  {
+    id: 'weekly-next',
+    title: 'План на следующую неделю',
+    prompt: 'Перечислите задачи следующей недели.',
+    inputType: 'list',
+    listStyle: 'numbered',
+    required: true,
+  },
+  {
+    id: 'weekly-review',
+    title: 'Прошу на разбор',
+    prompt: 'Нужно ли разобрать этот отчёт?',
+    inputType: 'boolean',
+    listStyle: null,
+    required: true,
+  },
 ];
 
-function uniqueReportSections<T extends string>(sections: T[]): boolean {
-  return new Set(sections).size === sections.length;
+function uniqueReportFields(fields: TelegramReportField[]): boolean {
+  return new Set(fields.map(field => field.id)).size === fields.length;
 }
 
-export const TelegramDailyReportSectionsSchema = z
-  .array(TelegramDailyReportSectionSchema)
+export const TelegramReportSectionsSchema = z
+  .array(TelegramReportFieldSchema)
   .min(1)
-  .max(DefaultTelegramDailyReportSections.length)
-  .refine(uniqueReportSections, { message: 'Daily report sections must be unique' });
+  .max(12)
+  .refine(uniqueReportFields, { message: 'Report field IDs must be unique' });
 
-export const TelegramWeeklyReportSectionsSchema = z
-  .array(TelegramWeeklyReportSectionSchema)
-  .min(1)
-  .max(DefaultTelegramWeeklyReportSections.length)
-  .refine(uniqueReportSections, { message: 'Weekly report sections must be unique' });
+export const TelegramDailyReportSectionsSchema = TelegramReportSectionsSchema;
+export const TelegramWeeklyReportSectionsSchema = TelegramReportSectionsSchema;
 
 const maxPostgresBigInt = 9_223_372_036_854_775_807n;
 

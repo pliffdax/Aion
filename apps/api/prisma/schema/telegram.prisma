@@ -6,8 +6,8 @@ model TelegramUser {
   locale               TelegramLocale @default(RU)
   reportAuthorName     String?        @db.VarChar(100)
   reportStartDate      DateTime?      @db.Date
-  reportDailySections  String[]       @default(["daily-priorities", "daily-event", "daily-conclusion", "daily-tomorrow", "daily-rating"])
-  reportWeeklySections String[]       @default(["weekly-wins", "weekly-failure", "weekly-insight", "weekly-next", "weekly-review"])
+  reportDailySections  Json
+  reportWeeklySections Json
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
 

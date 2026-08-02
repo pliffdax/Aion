@@ -1,22 +1,19 @@
 import type { v1 } from '@aion/contracts';
-import type { TranslationKey } from '../../core/i18n/i18n.js';
 import type {
-  DailyReportDraft,
   ReportCalendar,
+  ReportFieldAnswer,
   ReportItem,
   ReportItemStatus,
-  WeeklyReportDraft,
 } from './report.formatter.js';
 
-export type DailyReportSection = v1.TelegramDailyReportSection;
-export type WeeklyReportSection = v1.TelegramWeeklyReportSection;
-export type ConfiguredReportStep = DailyReportSection | WeeklyReportSection;
+export type ReportField = v1.TelegramReportField;
+export type ReportFieldInputType = v1.TelegramReportFieldInputType;
+export type ReportListStyle = v1.TelegramReportListStyle;
 export type ReportType = 'daily' | 'weekly';
-export type ReportStep = 'choose' | ConfiguredReportStep;
 
 export interface ReportConfiguration {
-  dailySections: DailyReportSection[];
-  weeklySections: WeeklyReportSection[];
+  dailySections: ReportField[];
+  weeklySections: ReportField[];
 }
 
 export interface MessageReference {
@@ -30,14 +27,13 @@ export interface ReportSession {
   authorTag: string;
   startDate: string;
   type: ReportType | null;
-  step: ReportStep;
+  fieldIndex: number | null;
   collector: MessageReference;
   calendar: ReportCalendar;
   configuration: ReportConfiguration;
+  answers: Record<ReportType, Record<string, ReportFieldAnswer>>;
   editingItemId: number | null;
   nextItemId: number;
-  daily: DailyReportDraft;
-  weekly: WeeklyReportDraft;
 }
 
 export function createReportSession(
@@ -49,145 +45,123 @@ export function createReportSession(
   calendar: ReportCalendar,
   configuration: ReportConfiguration,
 ): ReportSession {
+  const copiedConfiguration = {
+    dailySections: configuration.dailySections.map(copyReportField),
+    weeklySections: configuration.weeklySections.map(copyReportField),
+  };
+
   return {
     userId,
     authorName,
     authorTag,
     startDate,
     type: null,
-    step: 'choose',
+    fieldIndex: null,
     collector,
     calendar,
-    configuration: {
-      dailySections: [...configuration.dailySections],
-      weeklySections: [...configuration.weeklySections],
+    configuration: copiedConfiguration,
+    answers: {
+      daily: createAnswers(copiedConfiguration.dailySections),
+      weekly: createAnswers(copiedConfiguration.weeklySections),
     },
     editingItemId: null,
     nextItemId: 1,
-    daily: {
-      priorities: [],
-      event: '',
-      conclusion: '',
-      tomorrow: [],
-      rating: null,
-    },
-    weekly: {
-      wins: [],
-      failure: '',
-      insight: '',
-      nextWeek: [],
-      requestReview: null,
-    },
   };
+}
+
+export function copyReportField(field: ReportField): ReportField {
+  return { ...field };
 }
 
 export function setReportType(session: ReportSession, type: ReportType): void {
   session.type = type;
-  session.step = sectionsForType(session, type)[0];
+  session.fieldIndex = 0;
   session.editingItemId = null;
 }
 
-export function sectionsForType(session: ReportSession, type: ReportType): ConfiguredReportStep[] {
+export function sectionsForType(session: ReportSession, type: ReportType): ReportField[] {
   return type === 'daily'
     ? session.configuration.dailySections
     : session.configuration.weeklySections;
 }
 
-export function advanceReportStep(session: ReportSession): boolean {
-  if (!session.type || session.step === 'choose') return false;
+export function currentField(session: ReportSession): ReportField | null {
+  if (!session.type || session.fieldIndex === null) return null;
+  return sectionsForType(session, session.type)[session.fieldIndex] ?? null;
+}
 
-  const sections = sectionsForType(session, session.type);
-  const currentIndex = sections.indexOf(session.step);
-  const nextStep = sections[currentIndex + 1];
-  if (!nextStep) return false;
+export function currentAnswer(session: ReportSession): ReportFieldAnswer | null {
+  const field = currentField(session);
+  if (!field || !session.type) return null;
+  return session.answers[session.type][field.id] ?? null;
+}
+
+export function currentTypeAnswers(session: ReportSession): Record<string, ReportFieldAnswer> {
+  if (!session.type) return {};
+  return session.answers[session.type];
+}
+
+export function advanceReportStep(session: ReportSession): boolean {
+  if (!session.type || session.fieldIndex === null) return false;
+
+  const nextIndex = session.fieldIndex + 1;
+  if (nextIndex >= sectionsForType(session, session.type).length) return false;
 
   session.editingItemId = null;
-  session.step = nextStep;
+  session.fieldIndex = nextIndex;
   return true;
 }
 
 export function retreatReportStep(session: ReportSession): void {
-  if (!session.type || session.step === 'choose') return;
+  if (!session.type || session.fieldIndex === null) return;
 
-  const sections = sectionsForType(session, session.type);
-  const currentIndex = sections.indexOf(session.step);
   session.editingItemId = null;
-
-  if (currentIndex <= 0) {
-    session.step = 'choose';
+  if (session.fieldIndex === 0) {
     session.type = null;
+    session.fieldIndex = null;
     return;
   }
 
-  session.step = sections[currentIndex - 1];
+  session.fieldIndex -= 1;
 }
 
 export function reportStepPosition(session: ReportSession): { current: number; total: number } {
-  if (!session.type || session.step === 'choose') return { current: 0, total: 0 };
-
-  const sections = sectionsForType(session, session.type);
+  if (!session.type || session.fieldIndex === null) return { current: 0, total: 0 };
   return {
-    current: sections.indexOf(session.step) + 1,
-    total: sections.length,
+    current: session.fieldIndex + 1,
+    total: sectionsForType(session, session.type).length,
   };
 }
 
 export function currentItems(session: ReportSession): ReportItem[] | null {
-  const lists: Partial<Record<ReportStep, ReportItem[]>> = {
-    'daily-priorities': session.daily.priorities,
-    'daily-tomorrow': session.daily.tomorrow,
-    'weekly-wins': session.weekly.wins,
-    'weekly-next': session.weekly.nextWeek,
-  };
-
-  return lists[session.step] ?? null;
+  if (currentField(session)?.inputType !== 'list') return null;
+  return currentAnswer(session)?.items ?? null;
 }
 
 export function currentText(session: ReportSession): string | null {
-  const values: Partial<Record<ReportStep, string>> = {
-    'daily-event': session.daily.event,
-    'daily-conclusion': session.daily.conclusion,
-    'weekly-failure': session.weekly.failure,
-    'weekly-insight': session.weekly.insight,
-  };
-
-  return values[session.step] ?? null;
+  if (currentField(session)?.inputType !== 'text') return null;
+  return currentAnswer(session)?.text ?? null;
 }
 
 export function setCurrentText(session: ReportSession, value: string): void {
-  const setters: Partial<Record<ReportStep, () => void>> = {
-    'daily-event': () => {
-      session.daily.event = value;
-    },
-    'daily-conclusion': () => {
-      session.daily.conclusion = value;
-    },
-    'weekly-failure': () => {
-      session.weekly.failure = value;
-    },
-    'weekly-insight': () => {
-      session.weekly.insight = value;
-    },
-  };
-
-  setters[session.step]?.();
+  const answer = currentAnswer(session);
+  if (currentField(session)?.inputType === 'text' && answer) answer.text = value;
 }
 
-export function stepTitleKey(step: ConfiguredReportStep): TranslationKey {
-  const keys: Record<ConfiguredReportStep, TranslationKey> = {
-    'daily-priorities': 'report.dailyPriorities',
-    'daily-event': 'report.dailyEvent',
-    'daily-conclusion': 'report.dailyConclusion',
-    'daily-tomorrow': 'report.dailyTomorrow',
-    'daily-rating': 'report.dailyRating',
-    'weekly-wins': 'report.weeklyWins',
-    'weekly-failure': 'report.weeklyFailure',
-    'weekly-insight': 'report.weeklyInsight',
-    'weekly-next': 'report.weeklyNextPlan',
-    'weekly-review': 'report.weeklyReview',
-  };
+export function isListStep(session: ReportSession): boolean {
+  return currentField(session)?.inputType === 'list';
+}
 
-  return keys[step];
+export function isTextStep(session: ReportSession): boolean {
+  return currentField(session)?.inputType === 'text';
+}
+
+export function isRatingStep(session: ReportSession): boolean {
+  return currentField(session)?.inputType === 'rating';
+}
+
+export function isBooleanStep(session: ReportSession): boolean {
+  return currentField(session)?.inputType === 'boolean';
 }
 
 export function parseItems(input: string): string[] {
@@ -199,24 +173,6 @@ export function parseItems(input: string): string[] {
 
 export function normalizeItem(value: string): string {
   return value.trim().replace(/^(?:(?:[-–•])|(?:\d+[.)]))\s*/, '');
-}
-
-export function isListStep(step: ReportStep): boolean {
-  return (
-    step === 'daily-priorities' ||
-    step === 'daily-tomorrow' ||
-    step === 'weekly-wins' ||
-    step === 'weekly-next'
-  );
-}
-
-export function isTextStep(step: ReportStep): boolean {
-  return (
-    step === 'daily-event' ||
-    step === 'daily-conclusion' ||
-    step === 'weekly-failure' ||
-    step === 'weekly-insight'
-  );
 }
 
 export function nextStatus(status: ReportItemStatus): ReportItemStatus {
@@ -232,16 +188,20 @@ export function statusMarker(status: ReportItemStatus): string {
 }
 
 export function draftCharacterCount(session: ReportSession): number {
-  return (
-    session.daily.priorities.reduce(sumItemLength, 0) +
-    session.daily.event.length +
-    session.daily.conclusion.length +
-    session.daily.tomorrow.reduce(sumItemLength, 0) +
-    session.weekly.wins.reduce(sumItemLength, 0) +
-    session.weekly.failure.length +
-    session.weekly.insight.length +
-    session.weekly.nextWeek.reduce(sumItemLength, 0)
-  );
+  return Object.values(session.answers)
+    .flatMap(answers => Object.values(answers))
+    .reduce(
+      (total, answer) => total + answer.text.length + answer.items.reduce(sumItemLength, 0),
+      0,
+    );
+}
+
+function createAnswers(fields: ReportField[]): Record<string, ReportFieldAnswer> {
+  return Object.fromEntries(fields.map(field => [field.id, createAnswer()]));
+}
+
+function createAnswer(): ReportFieldAnswer {
+  return { text: '', items: [], rating: null, boolean: null };
 }
 
 function sumItemLength(total: number, item: ReportItem): number {

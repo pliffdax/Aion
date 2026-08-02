@@ -21,11 +21,17 @@ import {
 } from './report.formatter.js';
 import {
   advanceReportStep,
+  copyReportField,
+  currentAnswer,
+  currentField,
   createReportSession,
   currentItems,
   currentText,
+  currentTypeAnswers,
   draftCharacterCount,
+  isBooleanStep,
   isListStep,
+  isRatingStep,
   isTextStep,
   nextStatus,
   normalizeItem,
@@ -33,14 +39,16 @@ import {
   retreatReportStep,
   setReportType,
   setCurrentText,
-  type ConfiguredReportStep,
-  type DailyReportSection,
+  type ReportField,
+  type ReportFieldInputType,
+  type ReportListStyle,
   type ReportSession,
   type ReportType,
-  type WeeklyReportSection,
 } from './report.session.js';
 import {
   buildReportMenuKeyboard,
+  buildReportFieldEditorKeyboard,
+  buildReportFieldTextInputKeyboard,
   buildReportSectionConfigurationKeyboard,
   buildReportSettingsKeyboard,
   buildCollectorKeyboard,
@@ -49,6 +57,7 @@ import {
   buildReportStartDateKeyboard,
   buildTypeKeyboard,
   renderReportMenu,
+  renderReportFieldEditor,
   renderReportSectionConfiguration,
   renderReportSettings,
   renderCollector,
@@ -61,8 +70,8 @@ const maxTextLength = 800;
 const maxDraftCharacters = 3_000;
 const itemActionPattern = /^report:item:(status|edit|delete):(\d+)$/;
 const ratingPattern = /^report:rating:(10|[1-9])$/;
-const configurationActionPattern =
-  /^report:config:(daily|weekly):(toggle|up|down):(daily-(?:priorities|event|conclusion|tomorrow|rating)|weekly-(?:wins|failure|insight|next|review))$/;
+const configurationMovePattern = /^report:config:(daily|weekly):move:(up|down):(\d+)$/;
+const maxReportFields = 12;
 
 type ItemAction = 'status' | 'edit' | 'delete';
 
@@ -74,7 +83,10 @@ type ReportSetupStep =
   | 'custom-date'
   | 'week-day'
   | 'daily-sections'
-  | 'weekly-sections';
+  | 'weekly-sections'
+  | 'field-editor'
+  | 'field-title'
+  | 'field-prompt';
 
 type ReportSetupFlow = 'onboarding' | 'settings';
 
@@ -85,10 +97,12 @@ interface ReportSetupSession {
   flow: ReportSetupFlow;
   authorName: string | null;
   startDate: string | null;
-  dailySections: DailyReportSection[];
-  weeklySections: WeeklyReportSection[];
-  savedDailySections: DailyReportSection[];
-  savedWeeklySections: WeeklyReportSection[];
+  dailySections: ReportField[];
+  weeklySections: ReportField[];
+  savedDailySections: ReportField[];
+  savedWeeklySections: ReportField[];
+  configuringType: ReportType | null;
+  editingFieldId: string | null;
 }
 
 const sessionsByUserId = new Map<number, ReportSession>();
@@ -127,10 +141,12 @@ export const command: Command = {
       flow: 'onboarding' as const,
       authorName: profile.reportAuthorName,
       startDate: profile.reportStartDate,
-      dailySections: [...profile.reportDailySections],
-      weeklySections: [...profile.reportWeeklySections],
-      savedDailySections: [...profile.reportDailySections],
-      savedWeeklySections: [...profile.reportWeeklySections],
+      dailySections: profile.reportDailySections.map(copyReportField),
+      weeklySections: profile.reportWeeklySections.map(copyReportField),
+      savedDailySections: profile.reportDailySections.map(copyReportField),
+      savedWeeklySections: profile.reportWeeklySections.map(copyReportField),
+      configuringType: null,
+      editingFieldId: null,
     };
 
     if (!profile.reportAuthorName) {
@@ -263,8 +279,10 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
     if (!setup || setup.step !== 'settings-menu') return;
 
     const type = context.match[1] as ReportType;
-    if (type === 'daily') setup.dailySections = [...setup.savedDailySections];
-    else setup.weeklySections = [...setup.savedWeeklySections];
+    if (type === 'daily') setup.dailySections = setup.savedDailySections.map(copyReportField);
+    else setup.weeklySections = setup.savedWeeklySections.map(copyReportField);
+    setup.configuringType = type;
+    setup.editingFieldId = null;
     setup.step = type === 'daily' ? 'daily-sections' : 'weekly-sections';
     await context.answerCallbackQuery();
     await showReportSectionConfiguration(context.api, setup, type);
@@ -277,10 +295,10 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
     await context.answerCallbackQuery();
     releaseTextInput(setup.userId, 'report');
 
-    if (setup.step === 'daily-sections') {
-      setup.dailySections = [...setup.savedDailySections];
-    } else if (setup.step === 'weekly-sections') {
-      setup.weeklySections = [...setup.savedWeeklySections];
+    if (setup.configuringType === 'daily') {
+      setup.dailySections = setup.savedDailySections.map(copyReportField);
+    } else if (setup.configuringType === 'weekly') {
+      setup.weeklySections = setup.savedWeeklySections.map(copyReportField);
     }
 
     if (setup.step === 'settings-menu') {
@@ -291,40 +309,166 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
     await showReportSettings(context.api, setup);
   });
 
-  bot.callbackQuery(configurationActionPattern, async context => {
+  bot.callbackQuery(/^report:config:(daily|weekly):edit:(\d+)$/, async context => {
     const setup = await activeSetupSession(context);
     if (!setup) return;
 
     const type = context.match[1] as ReportType;
-    const action = context.match[2] as 'toggle' | 'up' | 'down';
-    const section = context.match[3] as ConfiguredReportStep;
     const expectedStep = type === 'daily' ? 'daily-sections' : 'weekly-sections';
-    if (setup.step !== expectedStep || !section.startsWith(`${type}-`)) return;
+    if (setup.step !== expectedStep || setup.configuringType !== type) return;
 
-    const sections: ConfiguredReportStep[] =
-      type === 'daily' ? setup.dailySections : setup.weeklySections;
-    const sectionIndex = sections.indexOf(section);
+    const fields = configuredFields(setup, type);
+    const field = fields[Number(context.match[2])];
+    if (!field) return;
 
-    if (action === 'toggle') {
-      if (sectionIndex >= 0 && sections.length === 1) {
-        await context.answerCallbackQuery(
-          translate(getLocale(setup.userId), 'report.atLeastOneSection'),
-        );
-        return;
-      }
+    setup.editingFieldId = field.id;
+    await context.answerCallbackQuery();
+    await showReportFieldEditor(context.api, setup);
+  });
 
-      if (sectionIndex >= 0) sections.splice(sectionIndex, 1);
-      else sections.push(section);
-    } else if (sectionIndex >= 0) {
-      const targetIndex = action === 'up' ? sectionIndex - 1 : sectionIndex + 1;
-      if (targetIndex >= 0 && targetIndex < sections.length) {
-        [sections[sectionIndex], sections[targetIndex]] = [
-          sections[targetIndex],
-          sections[sectionIndex],
-        ];
-      }
+  bot.callbackQuery(configurationMovePattern, async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup) return;
+
+    const type = context.match[1] as ReportType;
+    const direction = context.match[2] as 'up' | 'down';
+    const index = Number(context.match[3]);
+    const expectedStep = type === 'daily' ? 'daily-sections' : 'weekly-sections';
+    if (setup.step !== expectedStep || setup.configuringType !== type) return;
+
+    const fields = configuredFields(setup, type);
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (fields[index] && fields[targetIndex]) {
+      [fields[index], fields[targetIndex]] = [fields[targetIndex], fields[index]];
     }
 
+    await context.answerCallbackQuery();
+    await showReportSectionConfiguration(context.api, setup, type);
+  });
+
+  bot.callbackQuery(/^report:config:(daily|weekly):add$/, async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup) return;
+
+    const type = context.match[1] as ReportType;
+    const expectedStep = type === 'daily' ? 'daily-sections' : 'weekly-sections';
+    if (setup.step !== expectedStep || setup.configuringType !== type) return;
+
+    const fields = configuredFields(setup, type);
+    if (fields.length >= maxReportFields) {
+      await context.answerCallbackQuery(
+        translate(getLocale(setup.userId), 'report.maxFields', { max: maxReportFields }),
+      );
+      return;
+    }
+
+    const field: ReportField = {
+      id: makeReportFieldId(fields),
+      title: translate(getLocale(setup.userId), 'report.newField'),
+      prompt: '',
+      inputType: 'text',
+      listStyle: null,
+      required: true,
+    };
+    fields.push(field);
+    setup.editingFieldId = field.id;
+
+    await context.answerCallbackQuery();
+    await showReportFieldEditor(context.api, setup);
+  });
+
+  bot.callbackQuery(/^report:field:type:(text|list|rating|boolean)$/, async context => {
+    const setup = await activeSetupSession(context);
+    const field = setup ? editingSetupField(setup) : null;
+    if (!setup || !field || setup.step !== 'field-editor') return;
+
+    field.inputType = context.match[1] as ReportFieldInputType;
+    field.listStyle = field.inputType === 'list' ? (field.listStyle ?? 'dash') : null;
+    await context.answerCallbackQuery();
+    await showReportFieldEditor(context.api, setup);
+  });
+
+  bot.callbackQuery(/^report:field:style:(dash|numbered|status)$/, async context => {
+    const setup = await activeSetupSession(context);
+    const field = setup ? editingSetupField(setup) : null;
+    if (!setup || !field || setup.step !== 'field-editor' || field.inputType !== 'list') return;
+
+    field.listStyle = context.match[1] as ReportListStyle;
+    await context.answerCallbackQuery();
+    await showReportFieldEditor(context.api, setup);
+  });
+
+  bot.callbackQuery('report:field:required', async context => {
+    const setup = await activeSetupSession(context);
+    const field = setup ? editingSetupField(setup) : null;
+    if (!setup || !field || setup.step !== 'field-editor') return;
+
+    field.required = !field.required;
+    await context.answerCallbackQuery();
+    await showReportFieldEditor(context.api, setup);
+  });
+
+  bot.callbackQuery('report:field:delete', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'field-editor' || !setup.configuringType) return;
+
+    const fields = configuredFields(setup, setup.configuringType);
+    if (fields.length === 1) {
+      await context.answerCallbackQuery(
+        translate(getLocale(setup.userId), 'report.atLeastOneSection'),
+      );
+      return;
+    }
+
+    const index = fields.findIndex(field => field.id === setup.editingFieldId);
+    if (index < 0) return;
+    fields.splice(index, 1);
+    setup.editingFieldId = null;
+    const type = setup.configuringType;
+    await context.answerCallbackQuery();
+    await showReportSectionConfiguration(context.api, setup, type);
+  });
+
+  bot.callbackQuery('report:field:rename', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'field-editor' || !editingSetupField(setup)) return;
+
+    await context.answerCallbackQuery();
+    await showReportFieldTextPrompt(context.api, setup, 'field-title');
+  });
+
+  bot.callbackQuery('report:field:prompt', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'field-editor' || !editingSetupField(setup)) return;
+
+    await context.answerCallbackQuery();
+    await showReportFieldTextPrompt(context.api, setup, 'field-prompt');
+  });
+
+  bot.callbackQuery('report:field:prompt-clear', async context => {
+    const setup = await activeSetupSession(context);
+    const field = setup ? editingSetupField(setup) : null;
+    if (!setup || !field || setup.step !== 'field-editor') return;
+
+    field.prompt = '';
+    await context.answerCallbackQuery();
+    await showReportFieldEditor(context.api, setup);
+  });
+
+  bot.callbackQuery('report:field:editor-back', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || (setup.step !== 'field-title' && setup.step !== 'field-prompt')) return;
+
+    await context.answerCallbackQuery();
+    await showReportFieldEditor(context.api, setup);
+  });
+
+  bot.callbackQuery('report:field:back', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'field-editor' || !setup.configuringType) return;
+
+    const type = setup.configuringType;
+    setup.editingFieldId = null;
     await context.answerCallbackQuery();
     await showReportSectionConfiguration(context.api, setup, type);
   });
@@ -343,8 +487,10 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
         ? { reportDailySections: setup.dailySections }
         : { reportWeeklySections: setup.weeklySections },
     );
-    if (type === 'daily') setup.savedDailySections = [...setup.dailySections];
-    else setup.savedWeeklySections = [...setup.weeklySections];
+    if (type === 'daily') setup.savedDailySections = setup.dailySections.map(copyReportField);
+    else setup.savedWeeklySections = setup.weeklySections.map(copyReportField);
+    setup.configuringType = null;
+    setup.editingFieldId = null;
     await context.answerCallbackQuery(translate(getLocale(setup.userId), 'report.settingsSaved'));
     await showReportSettings(context.api, setup);
   });
@@ -425,7 +571,7 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
 
   bot.callbackQuery('report:menu:back', async context => {
     const session = await activeSession(context);
-    if (!session || session.step !== 'choose') return;
+    if (!session || session.type !== null) return;
 
     const setup: ReportSetupSession = {
       userId: session.userId,
@@ -434,10 +580,12 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
       flow: 'settings',
       authorName: session.authorName,
       startDate: session.startDate,
-      dailySections: [...session.configuration.dailySections],
-      weeklySections: [...session.configuration.weeklySections],
-      savedDailySections: [...session.configuration.dailySections],
-      savedWeeklySections: [...session.configuration.weeklySections],
+      dailySections: session.configuration.dailySections.map(copyReportField),
+      weeklySections: session.configuration.weeklySections.map(copyReportField),
+      savedDailySections: session.configuration.dailySections.map(copyReportField),
+      savedWeeklySections: session.configuration.weeklySections.map(copyReportField),
+      configuringType: null,
+      editingFieldId: null,
     };
     sessionsByUserId.delete(session.userId);
     setupSessionsByUserId.set(session.userId, setup);
@@ -460,7 +608,7 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
 
   bot.callbackQuery('report:back', async context => {
     const session = await activeSession(context);
-    if (!session || session.step === 'choose') return;
+    if (!session || session.type === null) return;
 
     retreatReportStep(session);
     await context.answerCallbackQuery();
@@ -473,7 +621,7 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
 
     const items = currentItems(session);
 
-    if (!items || items.length === 0) {
+    if (!items || (items.length === 0 && currentField(session)?.required !== false)) {
       await context.answerCallbackQuery(translate(getLocale(session.userId), 'report.needItem'));
       return;
     }
@@ -520,7 +668,7 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
     const session = await activeSession(context);
     if (!session) return;
 
-    if (!currentText(session)?.trim()) {
+    if (!currentText(session)?.trim() && currentField(session)?.required !== false) {
       await context.answerCallbackQuery(translate(getLocale(session.userId), 'report.needText'));
       return;
     }
@@ -531,18 +679,38 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
 
   bot.callbackQuery(ratingPattern, async context => {
     const session = await activeSession(context);
-    if (!session || session.step !== 'daily-rating') return;
+    if (!session || !isRatingStep(session)) return;
 
-    session.daily.rating = Number(context.match[1]);
+    const answer = currentAnswer(session);
+    if (!answer) return;
+    answer.rating = Number(context.match[1]);
     await context.answerCallbackQuery();
     await advanceOrFinishReport(context.api, session);
   });
 
-  bot.callbackQuery(/^report:review:(yes|no)$/, async context => {
+  bot.callbackQuery(/^report:boolean:(yes|no)$/, async context => {
     const session = await activeSession(context);
-    if (!session || session.step !== 'weekly-review') return;
+    if (!session || !isBooleanStep(session)) return;
 
-    session.weekly.requestReview = context.match[1] === 'yes';
+    const answer = currentAnswer(session);
+    if (!answer) return;
+    answer.boolean = context.match[1] === 'yes';
+    await context.answerCallbackQuery();
+    await advanceOrFinishReport(context.api, session);
+  });
+
+  bot.callbackQuery('report:skip', async context => {
+    const session = await activeSession(context);
+    const field = session ? currentField(session) : null;
+    if (
+      !session ||
+      !field ||
+      field.required ||
+      (!isRatingStep(session) && !isBooleanStep(session))
+    ) {
+      return;
+    }
+
     await context.answerCallbackQuery();
     await advanceOrFinishReport(context.api, session);
   });
@@ -611,7 +779,7 @@ function applyItemAction(session: ReportSession, action: ItemAction, itemId: num
 }
 
 function togglePriorityStatus(session: ReportSession, item: ReportItem): boolean {
-  if (session.step !== 'daily-priorities') return false;
+  if (currentField(session)?.listStyle !== 'status') return false;
 
   item.status = nextStatus(item.status);
   return true;
@@ -654,7 +822,11 @@ function acceptsReportSetupText(
     setup &&
     setup.userId === userId &&
     setup.collector.chatId === chatId &&
-    (setup.step === 'author-name' || setup.step === 'custom-date' || setup.step === 'week-day') &&
+    (setup.step === 'author-name' ||
+      setup.step === 'custom-date' ||
+      setup.step === 'week-day' ||
+      setup.step === 'field-title' ||
+      setup.step === 'field-prompt') &&
     ownsTextInput(userId, 'report') &&
     !input.startsWith('/'),
   );
@@ -667,6 +839,37 @@ async function processReportSetupInput(
   locale: Locale,
   apiClient: AionApiClient,
 ): Promise<boolean> {
+  if (setup.step === 'field-title' || setup.step === 'field-prompt') {
+    const field = editingSetupField(setup);
+    if (!field) return false;
+    const value = input.trim();
+
+    if (setup.step === 'field-title') {
+      if (!value || value.length > 80) {
+        await sendTemporarySetupNotice(
+          telegramApi,
+          setup,
+          translate(locale, 'report.fieldTitleInvalid'),
+        );
+        return false;
+      }
+      field.title = value;
+    } else {
+      if (value.length > 240) {
+        await sendTemporarySetupNotice(
+          telegramApi,
+          setup,
+          translate(locale, 'report.fieldPromptInvalid'),
+        );
+        return false;
+      }
+      field.prompt = value;
+    }
+
+    await showReportFieldEditor(telegramApi, setup);
+    return true;
+  }
+
   if (setup.step === 'author-name') {
     const authorName = normalizeReportAuthorName(input);
 
@@ -745,11 +948,11 @@ async function processReportInput(
       run: () => replaceEditedItem(telegramApi, session, text, locale),
     },
     {
-      matches: isListStep(session.step),
+      matches: isListStep(session),
       run: () => appendItems(telegramApi, session, text, locale),
     },
     {
-      matches: isTextStep(session.step),
+      matches: isTextStep(session),
       run: () => replaceCurrentText(telegramApi, session, text, locale),
     },
   ];
@@ -954,8 +1157,8 @@ function configuredReportSession(
   authorName: string,
   startDate: string,
   collector: { chatId: number; messageId: number },
-  dailySections: DailyReportSection[],
-  weeklySections: WeeklyReportSection[],
+  dailySections: ReportField[],
+  weeklySections: ReportField[],
 ): ReportSession {
   return createReportSession(
     userId,
@@ -1013,6 +1216,8 @@ async function showReportSettings(
 ): Promise<void> {
   setup.step = 'settings-menu';
   setup.flow = 'settings';
+  setup.configuringType = null;
+  setup.editingFieldId = null;
   releaseTextInput(setup.userId, 'report');
   const locale = getLocale(setup.userId);
   await telegramApi.editMessageText(
@@ -1044,8 +1249,10 @@ async function showReportSectionConfiguration(
   type: ReportType,
 ): Promise<void> {
   const locale = getLocale(setup.userId);
-  const sections: ConfiguredReportStep[] =
-    type === 'daily' ? setup.dailySections : setup.weeklySections;
+  const sections = configuredFields(setup, type);
+  setup.step = type === 'daily' ? 'daily-sections' : 'weekly-sections';
+  setup.configuringType = type;
+  releaseTextInput(setup.userId, 'report');
   await telegramApi.editMessageText(
     setup.collector.chatId,
     setup.collector.messageId,
@@ -1070,16 +1277,18 @@ async function refreshCollector(telegramApi: TelegramApi, session: ReportSession
 }
 
 async function finishReport(telegramApi: TelegramApi, session: ReportSession): Promise<void> {
+  if (!session.type) throw new Error('A report type is required to finish a report');
+  const answers = currentTypeAnswers(session);
   const report =
     session.type === 'daily'
       ? formatDailyReport(
-          session.daily,
+          answers,
           session.calendar,
           session.authorTag,
           session.configuration.dailySections,
         )
       : formatWeeklyReport(
-          session.weekly,
+          answers,
           session.calendar,
           session.authorTag,
           session.configuration.weeklySections,
@@ -1120,4 +1329,63 @@ function currentDateKey(): string {
 function requireApiClient(): AionApiClient {
   if (!registeredApiClient) throw new Error('Report API client is not registered');
   return registeredApiClient;
+}
+
+function configuredFields(setup: ReportSetupSession, type: ReportType): ReportField[] {
+  return type === 'daily' ? setup.dailySections : setup.weeklySections;
+}
+
+function editingSetupField(setup: ReportSetupSession): ReportField | null {
+  if (!setup.configuringType || !setup.editingFieldId) return null;
+  return (
+    configuredFields(setup, setup.configuringType).find(
+      field => field.id === setup.editingFieldId,
+    ) ?? null
+  );
+}
+
+async function showReportFieldEditor(
+  telegramApi: TelegramApi,
+  setup: ReportSetupSession,
+): Promise<void> {
+  const field = editingSetupField(setup);
+  if (!field) throw new Error('A report field is required for the field editor');
+
+  setup.step = 'field-editor';
+  releaseTextInput(setup.userId, 'report');
+  const locale = getLocale(setup.userId);
+  await telegramApi.editMessageText(
+    setup.collector.chatId,
+    setup.collector.messageId,
+    renderReportFieldEditor(locale, field),
+    { parse_mode: 'HTML', reply_markup: buildReportFieldEditorKeyboard(locale, field) },
+  );
+}
+
+async function showReportFieldTextPrompt(
+  telegramApi: TelegramApi,
+  setup: ReportSetupSession,
+  step: 'field-title' | 'field-prompt',
+): Promise<void> {
+  setup.step = step;
+  claimTextInput(setup.userId, 'report');
+  const locale = getLocale(setup.userId);
+  await telegramApi.editMessageText(
+    setup.collector.chatId,
+    setup.collector.messageId,
+    translate(
+      locale,
+      step === 'field-title' ? 'report.fieldTitlePrompt' : 'report.fieldPromptPrompt',
+    ),
+    { parse_mode: 'HTML', reply_markup: buildReportFieldTextInputKeyboard(locale) },
+  );
+}
+
+function makeReportFieldId(fields: ReportField[]): string {
+  const existingIds = new Set(fields.map(field => field.id));
+  const base = `field-${Date.now().toString(36)}`;
+  let candidate = base;
+  let suffix = 2;
+  while (existingIds.has(candidate)) candidate = `${base}-${suffix++}`;
+  return candidate;
 }

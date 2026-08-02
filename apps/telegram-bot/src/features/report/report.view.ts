@@ -1,17 +1,19 @@
-import { InlineKeyboard } from 'grammy';
 import { v1 } from '@aion/contracts';
+import { InlineKeyboard } from 'grammy';
 import { escapeHtml } from '../../core/formatting/html.js';
-import { getLocale, translate, type Locale } from '../../core/i18n/i18n.js';
+import { getLocale, translate, type Locale, type TranslationKey } from '../../core/i18n/i18n.js';
 import type { ReportCalendar, ReportItem } from './report.formatter.js';
 import {
+  currentField,
   currentItems,
   currentText,
+  isBooleanStep,
   isListStep,
+  isRatingStep,
   isTextStep,
   reportStepPosition,
   statusMarker,
-  stepTitleKey,
-  type ConfiguredReportStep,
+  type ReportField,
   type ReportSession,
   type ReportType,
 } from './report.session.js';
@@ -61,53 +63,42 @@ export function buildReportSettingsKeyboard(locale: Locale): InlineKeyboard {
 export function renderReportSectionConfiguration(
   locale: Locale,
   type: ReportType,
-  activeSections: ConfiguredReportStep[],
+  fields: ReportField[],
 ): string {
   const typeLabel = translate(locale, type === 'daily' ? 'report.daily' : 'report.weekly');
-  const sectionLines = activeSections.map(
-    (section, index) => `${index + 1}. ${translate(locale, stepTitleKey(section))}`,
+  const fieldLines = fields.map(
+    (field, index) =>
+      `${index + 1}. <b>${escapeHtml(field.title)}</b> · ${reportFieldTypeLabel(locale, field)}`,
   );
 
   return [
     translate(locale, 'report.configurationTitle', { type: typeLabel }),
     '',
-    translate(locale, 'report.configurationHint'),
+    translate(locale, 'report.builderHint'),
     '',
-    ...sectionLines,
+    ...fieldLines,
   ].join('\n');
 }
 
 export function buildReportSectionConfigurationKeyboard(
   locale: Locale,
   type: ReportType,
-  activeSections: ConfiguredReportStep[],
+  fields: ReportField[],
 ): InlineKeyboard {
   const keyboard = new InlineKeyboard();
-  const availableSections =
-    type === 'daily'
-      ? v1.DefaultTelegramDailyReportSections
-      : v1.DefaultTelegramWeeklyReportSections;
 
-  for (const section of availableSections) {
-    const activeIndex = activeSections.indexOf(section);
-    const marker = activeIndex >= 0 ? '✅' : '⬜';
-    const position = activeIndex >= 0 ? `${activeIndex + 1}. ` : '';
+  for (const [index, field] of fields.entries()) {
     keyboard
-      .text(
-        `${marker} ${position}${translate(locale, stepTitleKey(section))}`,
-        `report:config:${type}:toggle:${section}`,
-      )
+      .text(`${index + 1}. ${field.title}`, `report:config:${type}:edit:${index}`)
+      .row()
+      .text('⬆️', `report:config:${type}:move:up:${index}`)
+      .text('⬇️', `report:config:${type}:move:down:${index}`)
       .row();
-
-    if (activeIndex >= 0) {
-      keyboard
-        .text('⬆️', `report:config:${type}:up:${section}`)
-        .text('⬇️', `report:config:${type}:down:${section}`)
-        .row();
-    }
   }
 
   return keyboard
+    .text(translate(locale, 'report.addField'), `report:config:${type}:add`)
+    .row()
     .text(translate(locale, 'report.save'), `report:config:${type}:save`)
     .row()
     .text(translate(locale, 'report.back'), 'report:settings:back')
@@ -115,33 +106,94 @@ export function buildReportSectionConfigurationKeyboard(
     .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
 }
 
+export function renderReportFieldEditor(locale: Locale, field: ReportField): string {
+  return [
+    translate(locale, 'report.fieldEditorTitle'),
+    '',
+    `<b>${escapeHtml(field.title)}</b>`,
+    `${translate(locale, 'report.fieldType')}: ${reportFieldTypeLabel(locale, field)}`,
+    `${translate(locale, 'report.fieldRequired')}: ${translate(locale, field.required ? 'report.yes' : 'report.no')}`,
+    '',
+    `<i>${field.prompt ? escapeHtml(field.prompt) : translate(locale, 'report.fieldPromptEmpty')}</i>`,
+  ].join('\n');
+}
+
+export function buildReportFieldEditorKeyboard(locale: Locale, field: ReportField): InlineKeyboard {
+  const keyboard = new InlineKeyboard()
+    .text(translate(locale, 'report.renameField'), 'report:field:rename')
+    .row()
+    .text(translate(locale, 'report.editPrompt'), 'report:field:prompt');
+
+  if (field.prompt) {
+    keyboard.text(translate(locale, 'report.clearPrompt'), 'report:field:prompt-clear');
+  }
+
+  keyboard
+    .row()
+    .text(typeButton(locale, field, 'text'), 'report:field:type:text')
+    .text(typeButton(locale, field, 'list'), 'report:field:type:list')
+    .row()
+    .text(typeButton(locale, field, 'rating'), 'report:field:type:rating')
+    .text(typeButton(locale, field, 'boolean'), 'report:field:type:boolean')
+    .row();
+
+  if (field.inputType === 'list') {
+    keyboard
+      .text(listStyleButton(locale, field, 'dash'), 'report:field:style:dash')
+      .text(listStyleButton(locale, field, 'numbered'), 'report:field:style:numbered')
+      .row()
+      .text(listStyleButton(locale, field, 'status'), 'report:field:style:status')
+      .row();
+  }
+
+  return keyboard
+    .text(
+      `${field.required ? '✅' : '⬜'} ${translate(locale, 'report.fieldRequired')}`,
+      'report:field:required',
+    )
+    .row()
+    .text(translate(locale, 'report.deleteField'), 'report:field:delete')
+    .row()
+    .text(translate(locale, 'report.back'), 'report:field:back')
+    .row()
+    .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+}
+
+export function buildReportFieldTextInputKeyboard(locale: Locale): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(translate(locale, 'report.back'), 'report:field:editor-back')
+    .row()
+    .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+}
+
 export function renderCollector(session: ReportSession): string {
   const locale = getLocale(session.userId);
+  if (!session.type) return translate(locale, 'report.chooseType');
 
-  if (session.step === 'choose') {
-    return translate(locale, 'report.chooseType');
-  }
+  const field = currentField(session);
+  if (!field) return translate(locale, 'report.stale');
 
   const typeLabel = translate(locale, session.type === 'daily' ? 'report.daily' : 'report.weekly');
   const progress = reportStepPosition(session);
   const lines = [
     `<b>${typeLabel}</b> · <code>${progress.current}/${progress.total}</code>`,
-    `<b>${translate(locale, stepTitleKey(session.step))}</b>`,
+    `<b>${escapeHtml(field.title)}</b>`,
     '',
   ];
 
-  return [...lines, ...renderStepContent(session, locale)].join('\n');
+  return [...lines, ...renderStepContent(session, field, locale)].join('\n');
 }
 
 export function buildCollectorKeyboard(session: ReportSession): InlineKeyboard {
   const locale = getLocale(session.userId);
 
-  if (session.step === 'choose') return buildTypeKeyboard(locale);
+  if (!session.type) return buildTypeKeyboard(locale);
   if (session.editingItemId !== null) return buildEditingKeyboard(locale);
-  if (isListStep(session.step)) return buildListKeyboard(session, locale);
-  if (isTextStep(session.step)) return buildTextKeyboard(session, locale);
-  if (session.step === 'daily-rating') return buildRatingKeyboard(locale);
-  return buildReviewKeyboard(locale);
+  if (isListStep(session)) return buildListKeyboard(session, locale);
+  if (isTextStep(session)) return buildTextKeyboard(session, locale);
+  if (isRatingStep(session)) return buildRatingKeyboard(session, locale);
+  if (isBooleanStep(session)) return buildBooleanKeyboard(session, locale);
+  return addBackAndCancel(new InlineKeyboard(), locale);
 }
 
 export function buildTypeKeyboard(locale: Locale): InlineKeyboard {
@@ -178,16 +230,14 @@ export function buildReportStartDateKeyboard(locale: Locale): InlineKeyboard {
     .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
 }
 
-function formatDate(date: string): string {
-  return date.split('-').reverse().join('.');
-}
-
-function renderStepContent(session: ReportSession, locale: Locale): string[] {
+function renderStepContent(session: ReportSession, field: ReportField, locale: Locale): string[] {
   if (session.editingItemId !== null) return renderEditingItem(session, locale);
-  if (isListStep(session.step)) return renderList(session, locale);
-  if (isTextStep(session.step)) return renderText(session, locale);
-  if (session.step === 'daily-rating') return [translate(locale, 'report.ratingPrompt')];
-  return [translate(locale, 'report.reviewPrompt')];
+
+  const prompt = field.prompt ? [escapeHtml(field.prompt), ''] : [];
+  if (isListStep(session)) return [...prompt, ...renderList(session)];
+  if (isTextStep(session)) return [...prompt, ...renderText(session)];
+  if (isRatingStep(session)) return [...prompt, translate(locale, 'report.ratingPrompt')];
+  return [...prompt, translate(locale, 'report.booleanPrompt')];
 }
 
 function renderEditingItem(session: ReportSession, locale: Locale): string[] {
@@ -202,24 +252,15 @@ function renderEditingItem(session: ReportSession, locale: Locale): string[] {
   ];
 }
 
-function renderList(session: ReportSession, locale: Locale): string[] {
-  const isPriorityList = session.step === 'daily-priorities';
-  const instructions = [translate(locale, 'report.listHint')];
-
-  if (isPriorityList) {
-    instructions.push(translate(locale, 'report.priorityHint'));
-  }
-
-  return [
-    ...instructions,
-    '',
-    ...renderCollectorItems(currentItems(session) ?? [], isPriorityList),
-  ];
+function renderList(session: ReportSession): string[] {
+  const field = currentField(session);
+  const showStatus = field?.listStyle === 'status';
+  return renderCollectorItems(currentItems(session) ?? [], showStatus);
 }
 
-function renderText(session: ReportSession, locale: Locale): string[] {
+function renderText(session: ReportSession): string[] {
   const value = currentText(session);
-  return [translate(locale, 'report.textHint'), '', value ? escapeHtml(value) : '—'];
+  return [value ? escapeHtml(value) : '—'];
 }
 
 function renderCollectorItems(items: ReportItem[], showStatus: boolean): string[] {
@@ -241,14 +282,18 @@ function buildEditingKeyboard(locale: Locale): InlineKeyboard {
 function buildListKeyboard(session: ReportSession, locale: Locale): InlineKeyboard {
   const keyboard = new InlineKeyboard();
   const items = currentItems(session) ?? [];
-  const supportsStatus = session.step === 'daily-priorities';
+  const field = currentField(session);
+  const supportsStatus = field?.listStyle === 'status';
 
   for (const [index, item] of items.entries()) {
     addItemButtons(keyboard, item, index, supportsStatus, locale);
   }
 
-  if (items.length > 0) {
-    keyboard.text(translate(locale, 'report.next'), 'report:list-next');
+  if (items.length > 0 || field?.required === false) {
+    keyboard.text(
+      translate(locale, items.length > 0 ? 'report.next' : 'report.skip'),
+      'report:list-next',
+    );
   }
 
   return addBackAndCancel(keyboard, locale);
@@ -279,16 +324,18 @@ function addItemButtons(
 
 function buildTextKeyboard(session: ReportSession, locale: Locale): InlineKeyboard {
   const keyboard = new InlineKeyboard();
+  const value = currentText(session);
+  const field = currentField(session);
 
-  if (currentText(session)) {
-    keyboard.text(translate(locale, 'report.next'), 'report:text-next');
-    keyboard.text(translate(locale, 'report.clear'), 'report:text-clear');
+  if (value || field?.required === false) {
+    keyboard.text(translate(locale, value ? 'report.next' : 'report.skip'), 'report:text-next');
   }
+  if (value) keyboard.text(translate(locale, 'report.clear'), 'report:text-clear');
 
   return addBackAndCancel(keyboard, locale);
 }
 
-function buildRatingKeyboard(locale: Locale): InlineKeyboard {
+function buildRatingKeyboard(session: ReportSession, locale: Locale): InlineKeyboard {
   const keyboard = new InlineKeyboard();
 
   for (let rating = 1; rating <= 10; rating += 1) {
@@ -296,13 +343,21 @@ function buildRatingKeyboard(locale: Locale): InlineKeyboard {
     if (rating === 5) keyboard.row();
   }
 
+  if (currentField(session)?.required === false) {
+    keyboard.row().text(translate(locale, 'report.skip'), 'report:skip');
+  }
+
   return addBackAndCancel(keyboard, locale);
 }
 
-function buildReviewKeyboard(locale: Locale): InlineKeyboard {
+function buildBooleanKeyboard(session: ReportSession, locale: Locale): InlineKeyboard {
   const keyboard = new InlineKeyboard()
-    .text(translate(locale, 'report.yes'), 'report:review:yes')
-    .text(translate(locale, 'report.no'), 'report:review:no');
+    .text(translate(locale, 'report.yes'), 'report:boolean:yes')
+    .text(translate(locale, 'report.no'), 'report:boolean:no');
+
+  if (currentField(session)?.required === false) {
+    keyboard.row().text(translate(locale, 'report.skip'), 'report:skip');
+  }
 
   return addBackAndCancel(keyboard, locale);
 }
@@ -313,4 +368,42 @@ function addBackAndCancel(keyboard: InlineKeyboard, locale: Locale): InlineKeybo
     .text(translate(locale, 'report.back'), 'report:back')
     .row()
     .text(translate(locale, 'report.cancel'), 'report:cancel');
+}
+
+function reportFieldTypeLabel(locale: Locale, field: ReportField): string {
+  if (field.inputType !== 'list') return translate(locale, fieldTypeKeys[field.inputType]);
+  return `${translate(locale, 'report.fieldType.list')} · ${translate(locale, listStyleKeys[field.listStyle ?? 'dash'])}`;
+}
+
+function typeButton(
+  locale: Locale,
+  field: ReportField,
+  inputType: v1.TelegramReportFieldInputType,
+): string {
+  return `${field.inputType === inputType ? '✅' : '⬜'} ${translate(locale, fieldTypeKeys[inputType])}`;
+}
+
+function listStyleButton(
+  locale: Locale,
+  field: ReportField,
+  style: v1.TelegramReportListStyle,
+): string {
+  return `${field.listStyle === style ? '✅' : '⬜'} ${translate(locale, listStyleKeys[style])}`;
+}
+
+const fieldTypeKeys: Record<v1.TelegramReportFieldInputType, TranslationKey> = {
+  text: 'report.fieldType.text',
+  list: 'report.fieldType.list',
+  rating: 'report.fieldType.rating',
+  boolean: 'report.fieldType.boolean',
+};
+
+const listStyleKeys: Record<v1.TelegramReportListStyle, TranslationKey> = {
+  dash: 'report.listStyle.dash',
+  numbered: 'report.listStyle.numbered',
+  status: 'report.listStyle.status',
+};
+
+function formatDate(date: string): string {
+  return date.split('-').reverse().join('.');
 }
