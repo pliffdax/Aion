@@ -189,6 +189,11 @@ const translations = {
   ],
   'daily.title': ['План на сегодня', 'План на сьогодні', "Today's plan"],
   'daily.emptyPlan': ['План пока пуст.', 'План поки порожній.', 'The plan is empty.'],
+  'daily.completedHidden': [
+    'Все выполненные пункты скрыты.',
+    'Усі виконані пункти приховані.',
+    'All completed items are hidden.',
+  ],
   'daily.completed': ['выполнено', 'виконано', 'completed'],
   'daily.managementTitle': ['Управление планом', 'Керування планом', 'Plan management'],
   'daily.managementHint': [
@@ -207,7 +212,18 @@ const translations = {
   ],
   'daily.add': ['➕ Добавить', '➕ Додати', '➕ Add'],
   'daily.manage': ['⚙️ Управление', '⚙️ Керування', '⚙️ Manage'],
-  'daily.clearCompleted': ['🧹 Убрать выполненные', '🧹 Прибрати виконані', '🧹 Remove completed'],
+  'daily.hideCompleted': [
+    '🙈 Скрыть выполненные ({count})',
+    '🙈 Сховати виконані ({count})',
+    '🙈 Hide completed ({count})',
+  ],
+  'daily.showCompleted': [
+    '👁 Показать выполненные ({count})',
+    '👁 Показати виконані ({count})',
+    '👁 Show completed ({count})',
+  ],
+  'daily.markCompleted': ['✅ Отметить выполненным', '✅ Позначити виконаним', '✅ Mark completed'],
+  'daily.markIncomplete': ['↩️ Вернуть в работу', '↩️ Повернути в роботу', '↩️ Mark incomplete'],
   'daily.editItem': ['✏️ Редактировать {number}', '✏️ Редагувати {number}', '✏️ Edit {number}'],
   'daily.deleteItem': ['🗑 Удалить {number}', '🗑 Видалити {number}', '🗑 Delete {number}'],
   'daily.done': ['✅ Готово', '✅ Готово', '✅ Done'],
