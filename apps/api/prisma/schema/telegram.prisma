@@ -104,15 +104,16 @@ model DailyPlan {
 }
 
 model DailyPlanItem {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   dailyPlanId       String
   carriedFromItemId String?
-  text              String   @db.VarChar(160)
-  description       String?  @db.VarChar(2000)
-  completed         Boolean  @default(false)
+  text              String    @db.VarChar(160)
+  description       String?   @db.VarChar(2000)
+  completed         Boolean   @default(false)
+  completedAt       DateTime? @db.Timestamptz(3)
   position          Int
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   dailyPlan       DailyPlan       @relation(fields: [dailyPlanId], references: [id], onDelete: Cascade)
   carriedFromItem DailyPlanItem?  @relation("DailyPlanItemCarry", fields: [carriedFromItemId], references: [id], onDelete: SetNull)

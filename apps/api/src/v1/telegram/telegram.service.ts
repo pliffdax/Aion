@@ -306,16 +306,25 @@ export class TelegramService {
     return this.updateOwnedDailyPlanItem(dto, () => ({
       ...(dto.text !== undefined ? { text: dto.text } : {}),
       ...(dto.description !== undefined ? { description: dto.description } : {}),
-      ...(dto.completed !== undefined ? { completed: dto.completed } : {}),
+      ...(dto.completed !== undefined
+        ? {
+            completed: dto.completed,
+            completedAt: dto.completed ? new Date() : null,
+          }
+        : {}),
     }));
   }
 
   async toggleDailyPlanItem(
     dto: v1.ToggleTelegramDailyPlanItemDto,
   ): Promise<v1.TelegramDailyPlanDto> {
-    return this.updateOwnedDailyPlanItem(dto, item => ({
-      completed: !item.completed,
-    }));
+    return this.updateOwnedDailyPlanItem(dto, item => {
+      const completed = !item.completed;
+      return {
+        completed,
+        completedAt: completed ? new Date() : null,
+      };
+    });
   }
 
   private async updateOwnedDailyPlanItem(
@@ -324,6 +333,7 @@ export class TelegramService {
       text?: string;
       description?: string | null;
       completed?: boolean;
+      completedAt?: Date | null;
     },
   ): Promise<v1.TelegramDailyPlanDto> {
     const plan = await this.prisma.$transaction(async transaction => {
@@ -353,16 +363,10 @@ export class TelegramService {
   async clearCompletedDailyPlanItems(
     dto: v1.ClearCompletedTelegramDailyPlanItemsDto,
   ): Promise<v1.TelegramDailyPlanDto> {
-    const plan = await this.prisma.$transaction(async transaction => {
-      const dailyPlan = await upsertDailyPlan(transaction, dto);
-      await transaction.dailyPlanItem.deleteMany({
-        where: {
-          dailyPlanId: dailyPlan.id,
-          completed: true,
-        },
-      });
-      return findDailyPlan(transaction, dailyPlan.id);
-    });
+    // Kept as a no-op for older bot clients. Completed items are historical data;
+    // current clients hide them locally instead of deleting them from the database.
+    const dailyPlan = await upsertDailyPlan(this.prisma, dto);
+    const plan = await findDailyPlan(this.prisma, dailyPlan.id);
 
     return toDailyPlanDto(plan);
   }
@@ -785,6 +789,7 @@ function toDailyPlanDto(plan: DailyPlanRecord): v1.TelegramDailyPlanDto {
       text: item.text,
       description: item.description,
       completed: item.completed,
+      completedAt: item.completedAt?.toISOString() ?? null,
       position: item.position,
     })),
   };

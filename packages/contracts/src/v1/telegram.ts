@@ -310,6 +310,7 @@ export const TelegramDailyPlanItemDtoSchema = z.object({
   text: z.string().min(1).max(160),
   description: TelegramDailyPlanItemDescriptionSchema.nullable().default(null),
   completed: z.boolean(),
+  completedAt: z.string().datetime({ offset: true }).nullable().default(null),
   position: z.number().int().min(0),
 });
 export type TelegramDailyPlanItemDto = z.infer<typeof TelegramDailyPlanItemDtoSchema>;

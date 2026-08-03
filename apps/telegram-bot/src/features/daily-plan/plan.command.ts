@@ -16,6 +16,7 @@ const maxItems = 20;
 const maxItemLength = 160;
 const maxDescriptionLength = 2000;
 const toggleCallbackPattern = /^daily-plan:toggle:([^:]+)$/;
+const manageToggleCallbackPattern = /^daily-plan:manage-toggle:([^:]+)$/;
 const openManagementItemCallbackPattern = /^daily-plan:item:([^:]+)$/;
 const manageItemCallbackPattern = /^daily-plan:(edit|description|delete):([^:]+)$/;
 const confirmDeleteCallbackPattern = /^daily-plan:confirm-delete:([^:]+)$/;
@@ -38,6 +39,7 @@ interface DailyPlanInteractionState {
   activePanel: MessageReference | null;
   managementMessage: MessageReference | null;
   pendingInput: PendingInput | null;
+  hideCompleted: boolean;
 }
 
 const statesByOwnerId = new Map<number, DailyPlanInteractionState>();
@@ -50,12 +52,13 @@ export const command: Command = {
     const state = stateForOwner(context.from?.id);
     const apiClient = requireApiClient();
     const plan = await loadTodayPlan(apiClient, state.ownerId);
+    state.hideCompleted = false;
 
     await prepareTransientSurface(context.api, state);
 
-    const panel = await context.reply(renderPlan(plan), {
+    const panel = await context.reply(renderPlan(plan, state.hideCompleted), {
       parse_mode: 'HTML',
-      reply_markup: buildPlanKeyboard(plan),
+      reply_markup: buildPlanKeyboard(plan, state.hideCompleted),
     });
 
     state.activePanel = messageReference(panel);
@@ -251,23 +254,69 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
       state.activePanel = messageReference(panelMessage);
     }
 
-    await context.editMessageText(renderPlan(plan), {
+    await context.editMessageText(renderPlan(plan, state.hideCompleted), {
       parse_mode: 'HTML',
-      reply_markup: buildPlanKeyboard(plan),
+      reply_markup: buildPlanKeyboard(plan, state.hideCompleted),
     });
     await refreshManagementMessage(context.api, state, plan);
   });
 
-  bot.callbackQuery('daily-plan:clear-completed', async context => {
+  bot.callbackQuery(/^daily-plan:(?:clear|hide)-completed$/, async context => {
     const state = stateForOwner(context.from.id);
-    const plan = await apiClient.clearCompletedDailyPlanItems(state.ownerId, currentDateKey());
+    const plan = await loadTodayPlan(apiClient, state.ownerId);
+    state.hideCompleted = true;
     await context.answerCallbackQuery();
 
-    await context.editMessageText(renderPlan(plan), {
+    await context.editMessageText(renderPlan(plan, state.hideCompleted), {
       parse_mode: 'HTML',
-      reply_markup: buildPlanKeyboard(plan),
+      reply_markup: buildPlanKeyboard(plan, state.hideCompleted),
     });
     await refreshManagementMessage(context.api, state, plan);
+  });
+
+  bot.callbackQuery('daily-plan:show-completed', async context => {
+    const state = stateForOwner(context.from.id);
+    const plan = await loadTodayPlan(apiClient, state.ownerId);
+    state.hideCompleted = false;
+    await context.answerCallbackQuery();
+
+    await context.editMessageText(renderPlan(plan, state.hideCompleted), {
+      parse_mode: 'HTML',
+      reply_markup: buildPlanKeyboard(plan, state.hideCompleted),
+    });
+    await refreshManagementMessage(context.api, state, plan);
+  });
+
+  bot.callbackQuery(manageToggleCallbackPattern, async context => {
+    const state = stateForOwner(context.from.id);
+    const locale = getLocale(state.ownerId);
+    let plan = await loadTodayPlan(apiClient, state.ownerId);
+    const item = findItemFromCallback(
+      plan,
+      context.callbackQuery.data,
+      manageToggleCallbackPattern,
+    );
+
+    if (item) {
+      plan = await apiClient.toggleDailyPlanItem(state.ownerId, plan.date, item.id);
+    }
+
+    await context.answerCallbackQuery();
+    const updatedItem = item && plan.items.find(candidate => candidate.id === item.id);
+
+    if (!updatedItem) {
+      await context.editMessageText(renderManagement(plan), {
+        parse_mode: 'HTML',
+        reply_markup: buildManagementKeyboard(plan),
+      });
+    } else {
+      await context.editMessageText(renderItemDetails(locale, plan, updatedItem), {
+        parse_mode: 'HTML',
+        reply_markup: buildItemDetailsKeyboard(locale, updatedItem),
+      });
+    }
+
+    await refreshPlanPanel(context.api, state, plan);
   });
 
   bot.callbackQuery(openManagementItemCallbackPattern, async context => {
@@ -582,9 +631,9 @@ async function showUpdatedPlan(
   const panelUpdated = await refreshPlanPanel(context.api, state, plan);
 
   if (!panelUpdated) {
-    const panel = await context.reply(renderPlan(plan), {
+    const panel = await context.reply(renderPlan(plan, state.hideCompleted), {
       parse_mode: 'HTML',
-      reply_markup: buildPlanKeyboard(plan),
+      reply_markup: buildPlanKeyboard(plan, state.hideCompleted),
     });
 
     state.activePanel = messageReference(panel);
@@ -684,10 +733,15 @@ async function refreshPlanPanel(
   if (!activePanel) return false;
 
   return telegramApi
-    .editMessageText(activePanel.chatId, activePanel.messageId, renderPlan(plan), {
-      parse_mode: 'HTML',
-      reply_markup: buildPlanKeyboard(plan),
-    })
+    .editMessageText(
+      activePanel.chatId,
+      activePanel.messageId,
+      renderPlan(plan, state.hideCompleted),
+      {
+        parse_mode: 'HTML',
+        reply_markup: buildPlanKeyboard(plan, state.hideCompleted),
+      },
+    )
     .then(() => true)
     .catch(error => {
       if (isMessageNotModified(error)) return true;
@@ -760,7 +814,7 @@ function renderDescriptionEditPrompt(
   ].join('\n');
 }
 
-export function renderPlan(plan: v1.TelegramDailyPlanDto): string {
+export function renderPlan(plan: v1.TelegramDailyPlanDto, hideCompleted = false): string {
   const locale = getLocale(Number(plan.telegramUserId));
   const date = new Intl.DateTimeFormat(dateLocale(locale), {
     timeZone,
@@ -769,9 +823,11 @@ export function renderPlan(plan: v1.TelegramDailyPlanDto): string {
     year: 'numeric',
   }).format(new Date(`${plan.date}T00:00:00.000Z`));
   const completedCount = plan.items.filter(item => item.completed).length;
-  const itemLines = renderItemLines(plan);
+  const itemLines = renderItemLines(plan, hideCompleted);
   const items =
-    itemLines.length > 0 ? itemLines.join('\n') : `<i>${translate(locale, 'daily.emptyPlan')}</i>`;
+    itemLines.length > 0
+      ? itemLines.join('\n')
+      : `<i>${translate(locale, hideCompleted ? 'daily.completedHidden' : 'daily.emptyPlan')}</i>`;
 
   return [
     `<b>${translate(locale, 'daily.title')}</b>`,
@@ -826,25 +882,32 @@ function renderManagementItemLines(plan: v1.TelegramDailyPlanDto): string[] {
   });
 }
 
-function renderItemLines(plan: v1.TelegramDailyPlanDto): string[] {
-  return plan.items.map((item, index) => {
+function renderItemLines(plan: v1.TelegramDailyPlanDto, hideCompleted: boolean): string[] {
+  return plan.items.flatMap((item, index) => {
+    if (hideCompleted && item.completed) return [];
     const marker = item.completed ? '✅' : '⬜️';
-    return `${marker} <b>${index + 1}.</b> ${escapeHtml(item.text)}`;
+    return [`${marker} <b>${index + 1}.</b> ${escapeHtml(item.text)}`];
   });
 }
 
-export function buildPlanKeyboard(plan: v1.TelegramDailyPlanDto): InlineKeyboard {
+export function buildPlanKeyboard(
+  plan: v1.TelegramDailyPlanDto,
+  hideCompleted = false,
+): InlineKeyboard {
   const locale = getLocale(Number(plan.telegramUserId));
   const keyboard = new InlineKeyboard();
+  const visibleItems = plan.items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => !hideCompleted || !item.completed);
 
-  for (const [index, item] of plan.items.entries()) {
+  for (const [visibleIndex, { item, index }] of visibleItems.entries()) {
     const marker = item.completed ? '✅' : '⬜️';
     keyboard.text(`${marker} ${index + 1}`, `daily-plan:toggle:${item.id}`);
 
-    if ((index + 1) % 5 === 0) keyboard.row();
+    if ((visibleIndex + 1) % 5 === 0) keyboard.row();
   }
 
-  if (plan.items.length % 5 !== 0) keyboard.row();
+  if (visibleItems.length % 5 !== 0) keyboard.row();
 
   keyboard.text(translate(locale, 'daily.add'), 'daily-plan:add');
 
@@ -852,8 +915,15 @@ export function buildPlanKeyboard(plan: v1.TelegramDailyPlanDto): InlineKeyboard
     keyboard.text(translate(locale, 'daily.manage'), 'daily-plan:manage');
   }
 
-  if (plan.items.some(item => item.completed)) {
-    keyboard.row().text(translate(locale, 'daily.clearCompleted'), 'daily-plan:clear-completed');
+  const completedCount = plan.items.filter(item => item.completed).length;
+
+  if (completedCount > 0) {
+    keyboard.row().text(
+      translate(locale, hideCompleted ? 'daily.showCompleted' : 'daily.hideCompleted', {
+        count: completedCount,
+      }),
+      hideCompleted ? 'daily-plan:show-completed' : 'daily-plan:hide-completed',
+    );
   }
 
   return keyboard;
@@ -892,6 +962,11 @@ function buildItemDetailsKeyboard(
   }
 
   return keyboard
+    .text(
+      translate(locale, item.completed ? 'daily.markIncomplete' : 'daily.markCompleted'),
+      `daily-plan:manage-toggle:${item.id}`,
+    )
+    .row()
     .text(translate(locale, 'daily.delete'), `daily-plan:delete:${item.id}`)
     .row()
     .text(translate(locale, 'daily.backToManagement'), 'daily-plan:management-list');
@@ -931,6 +1006,7 @@ function stateForOwner(ownerId: number | undefined): DailyPlanInteractionState {
     activePanel: null,
     managementMessage: null,
     pendingInput: null,
+    hideCompleted: false,
   };
 
   statesByOwnerId.set(ownerId, state);
