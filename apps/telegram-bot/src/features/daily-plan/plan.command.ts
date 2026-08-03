@@ -10,6 +10,7 @@ import {
   releaseTextInput,
 } from '../../core/interactions/text-input-owner.js';
 import { currentKyivDateKey, kyivTimeZone } from '../../core/time/kyiv-calendar.js';
+import { isTelegramMessageNotModified } from '../../core/telegram-errors.js';
 
 const timeZone = kyivTimeZone;
 const maxItems = 20;
@@ -744,7 +745,7 @@ async function refreshPlanPanel(
     )
     .then(() => true)
     .catch(error => {
-      if (isMessageNotModified(error)) return true;
+      if (isTelegramMessageNotModified(error)) return true;
       state.activePanel = null;
       return false;
     });
@@ -770,16 +771,9 @@ async function refreshManagementMessage(
       },
     )
     .catch(error => {
-      if (isMessageNotModified(error)) return;
+      if (isTelegramMessageNotModified(error)) return;
       state.managementMessage = null;
     });
-}
-
-function isMessageNotModified(error: unknown): boolean {
-  if (!error || typeof error !== 'object' || !('description' in error)) return false;
-
-  const description = (error as { description?: unknown }).description;
-  return typeof description === 'string' && description.includes('message is not modified');
 }
 
 function currentDateKey(): string {

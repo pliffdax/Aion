@@ -37,7 +37,13 @@ test('report menu and history keyboards provide complete forward and back naviga
   assert.ok(historyCallbacks.includes('report:history:next'));
   assert.ok(historyCallbacks.includes('report:history:menu'));
   assert.ok(historyCallbacks.includes('report:history:filter:weekly_statistics'));
-  assert.deepEqual(callbacks(buildReportHistoryItemKeyboard('ru')), [
+  assert.deepEqual(callbacks(buildReportHistoryItemKeyboard('ru', 'daily')), [
+    'report:history:edit',
+    'report:history:refill',
+    'report:history:list',
+    'report:setup:cancel',
+  ]);
+  assert.deepEqual(callbacks(buildReportHistoryItemKeyboard('ru', 'weekly_statistics')), [
     'report:history:list',
     'report:setup:cancel',
   ]);
@@ -46,7 +52,7 @@ test('report menu and history keyboards provide complete forward and back naviga
 test('history makes the migration boundary and selected filter explicit', () => {
   assert.match(renderReportHistory('ru', 'daily', [dailyReport]), /Фильтр: <b>Дневной<\/b>/);
   assert.match(renderReportHistory('ru', null, []), /только с момента обновления/);
-  assert.match(renderReportHistory('ru', 'weekly_statistics', []), /Статистика/);
+  assert.match(renderReportHistory('ru', 'weekly_statistics', []), /автоматические снимки/);
 });
 
 test('existing report menu exposes open, edit, and refill actions', () => {
@@ -63,11 +69,13 @@ test('existing report menu exposes open, edit, and refill actions', () => {
     'report:existing:edit',
     'report:existing:refill',
     'report:existing:type-back',
-    'report:cancel',
+    'report:close',
   ]);
   assert.deepEqual(callbacks(buildExistingReportOpenKeyboard('ru')), [
+    'report:existing:edit',
+    'report:existing:refill',
     'report:existing:back',
-    'report:cancel',
+    'report:close',
   ]);
   assert.match(renderExistingReportMenu('ru', editableReport), /Отчёт уже создан/);
 });

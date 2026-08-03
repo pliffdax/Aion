@@ -289,7 +289,13 @@ const translations = {
   'report.historyAll': ['Все', 'Усі', 'All'],
   'report.historyDaily': ['Дни', 'Дні', 'Days'],
   'report.historyWeekly': ['Недели', 'Тижні', 'Weeks'],
-  'report.historyStatistics': ['Статистика', 'Статистика', 'Statistics'],
+  'report.historyStatistics': ['Статистика планов', 'Статистика планів', 'Plan statistics'],
+  'report.historyStatisticsItem': ['Планы', 'Плани', 'Plans'],
+  'report.historyStatisticsHint': [
+    'Здесь хранятся автоматические снимки статистики задач. Интерактивный просмотр недель — в /stats. Личные недельные отчёты находятся во вкладке «Недели».',
+    'Тут зберігаються автоматичні знімки статистики завдань. Інтерактивний перегляд тижнів — у /stats. Особисті тижневі звіти знаходяться у вкладці «Тижні».',
+    'These are saved automatic task-statistics snapshots. Browse weeks interactively with /stats. Personal weekly reports are under “Weeks”.',
+  ],
   'report.historyPrevious': ['⬅️ Новее', '⬅️ Новіші', '⬅️ Newer'],
   'report.historyNext': ['Раньше ➡️', 'Раніші ➡️', 'Older ➡️'],
   'report.existingTitle': [
@@ -408,7 +414,9 @@ const translations = {
   ],
   'report.daily': ['Дневной', 'Денний', 'Daily'],
   'report.weekly': ['Недельный', 'Тижневий', 'Weekly'],
-  'report.cancel': ['🚫 Отменить отчёт', '🚫 Скасувати звіт', '🚫 Cancel report'],
+  'report.cancel': ['🚫 Прервать заполнение', '🚫 Перервати заповнення', '🚫 Stop filling'],
+  'report.close': ['✖️ Закрыть', '✖️ Закрити', '✖️ Close'],
+  'report.closed': ['Панель отчётов закрыта.', 'Панель звітів закрито.', 'Report panel closed.'],
   'report.cancelled': ['Сбор отчёта отменён.', 'Збір звіту скасовано.', 'Report cancelled.'],
   'report.setupAuthorPrompt': [
     '<b>Настройка личных отчётов</b>\n\nВведите имя и фамилию одним сообщением. На их основе я создам хэштег для ваших отчётов.\n\nНапример: <code>Александр Степанов</code>',
@@ -451,7 +459,7 @@ const translations = {
   'report.next': ['⏩️ Дальше', '⏩️ Далі', '⏩️ Next'],
   'report.skip': ['⏩️ Пропустить', '⏩️ Пропустити', '⏩️ Skip'],
   'report.back': ['⏪️ Назад', '⏪️ Назад', '⏪️ Back'],
-  'report.clear': ['Очистить', 'Очистити', 'Clear'],
+  'report.clear': ['🗑️ Очистить', '🗑️ Очистити', '🗑️ Clear'],
   'report.needItem': [
     'Добавьте хотя бы один пункт.',
     'Додайте хоча б один пункт.',
@@ -545,9 +553,9 @@ const translations = {
     'This builder is no longer active. Run /report again.',
   ],
   'statistics.weeklyTitle': [
-    '<b>📈 Статистика недели</b>',
-    '<b>📈 Статистика тижня</b>',
-    '<b>📈 Weekly statistics</b>',
+    '<b>📈 Статистика планов за неделю</b>',
+    '<b>📈 Статистика планів за тиждень</b>',
+    '<b>📈 Weekly plan statistics</b>',
   ],
   'statistics.period': ['{start} — {end}', '{start} — {end}', '{start} — {end}'],
   'statistics.tasks': ['Задач: <b>{count}</b>', 'Завдань: <b>{count}</b>', 'Tasks: <b>{count}</b>'],

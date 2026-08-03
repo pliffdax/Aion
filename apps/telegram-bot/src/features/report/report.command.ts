@@ -1,4 +1,10 @@
-import { Bot, InlineKeyboard, type Api as TelegramApi } from 'grammy';
+import {
+  Bot,
+  InlineKeyboard,
+  type Api as TelegramApi,
+  type CallbackQueryContext,
+  type Context,
+} from 'grammy';
 import type { v1 } from '@aion/contracts';
 import type { AionApiClient } from '../../core/api/aion-api-client.js';
 import type { Command } from '../../core/commands/command.js';
@@ -122,6 +128,7 @@ interface ReportSetupSession {
   historyType: v1.TelegramReportType | null;
   historyCursorStack: (string | null)[];
   historyPage: v1.TelegramReportHistoryPageDto | null;
+  historySelectedReport: v1.TelegramReportDto | null;
 }
 
 const sessionsByUserId = new Map<number, ReportSession>();
@@ -170,6 +177,7 @@ export const command: Command = {
       historyType: null,
       historyCursorStack: [null],
       historyPage: null,
+      historySelectedReport: null,
     };
 
     if (!profile.reportAuthorName) {
@@ -237,10 +245,13 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
 
     setupSessionsByUserId.delete(setup.userId);
     releaseTextInput(setup.userId, 'report');
-    await context.answerCallbackQuery();
-    await context.editMessageText(translate(getLocale(setup.userId), 'report.cancelled'), {
-      reply_markup: new InlineKeyboard(),
-    });
+    const message = translate(getLocale(setup.userId), 'report.closed');
+    await context.answerCallbackQuery(message);
+    await context.deleteMessage().catch(() =>
+      context.editMessageText(message, {
+        reply_markup: new InlineKeyboard(),
+      }),
+    );
   });
 
   bot.callbackQuery('report:menu:start', async context => {
@@ -290,8 +301,14 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
       const setup = await activeSetupSession(context);
       if (!setup || setup.step !== 'report-history-list') return;
 
-      setup.historyType =
+      const selectedType =
         context.match[1] === 'all' ? null : (context.match[1] as v1.TelegramReportType);
+      if (setup.historyType === selectedType && setup.historyCursorStack.length === 1) {
+        await context.answerCallbackQuery();
+        return;
+      }
+
+      setup.historyType = selectedType;
       setup.historyCursorStack = [null];
       await context.answerCallbackQuery();
       await showReportHistory(context.api, setup, apiClient);
@@ -330,11 +347,20 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
 
     const report = await apiClient.getReportHistoryItem(setup.userId, reportId);
     setup.step = 'report-history-item';
+    setup.historySelectedReport = report;
     await context.answerCallbackQuery();
     await context.editMessageText(report.text, {
       parse_mode: 'HTML',
-      reply_markup: buildReportHistoryItemKeyboard(getLocale(setup.userId)),
+      reply_markup: buildReportHistoryItemKeyboard(getLocale(setup.userId), report.type),
     });
+  });
+
+  bot.callbackQuery('report:history:edit', async context => {
+    await beginHistoryReportReplacement(context, apiClient, 'edit');
+  });
+
+  bot.callbackQuery('report:history:refill', async context => {
+    await beginHistoryReportReplacement(context, apiClient, 'refill');
   });
 
   bot.callbackQuery('report:history:list', async context => {
@@ -760,6 +786,7 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
       historyType: null,
       historyCursorStack: [null],
       historyPage: null,
+      historySelectedReport: null,
     };
     sessionsByUserId.delete(session.userId);
     setupSessionsByUserId.set(session.userId, setup);
@@ -774,10 +801,28 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
 
     sessionsByUserId.delete(session.userId);
     releaseTextInput(session.userId, 'report');
-    await context.answerCallbackQuery();
-    await context.editMessageText(translate(getLocale(session.userId), 'report.cancelled'), {
-      reply_markup: new InlineKeyboard(),
-    });
+    const message = translate(getLocale(session.userId), 'report.cancelled');
+    await context.answerCallbackQuery(message);
+    await context.deleteMessage().catch(() =>
+      context.editMessageText(message, {
+        reply_markup: new InlineKeyboard(),
+      }),
+    );
+  });
+
+  bot.callbackQuery('report:close', async context => {
+    const session = await activeSession(context);
+    if (!session || session.replaceMode) return;
+
+    sessionsByUserId.delete(session.userId);
+    releaseTextInput(session.userId, 'report');
+    const message = translate(getLocale(session.userId), 'report.closed');
+    await context.answerCallbackQuery(message);
+    await context.deleteMessage().catch(() =>
+      context.editMessageText(message, {
+        reply_markup: new InlineKeyboard(),
+      }),
+    );
   });
 
   bot.callbackQuery('report:back', async context => {
@@ -1121,6 +1166,57 @@ async function activeSetupSession(context: {
   return null;
 }
 
+async function beginHistoryReportReplacement(
+  context: CallbackQueryContext<Context>,
+  apiClient: AionApiClient,
+  mode: 'edit' | 'refill',
+): Promise<void> {
+  const setup = await activeSetupSession(context);
+  if (!setup || setup.step !== 'report-history-item') return;
+  const selected = setup.historySelectedReport;
+
+  if (!selected || selected.type === 'weekly_statistics' || !setup.authorName || !setup.startDate) {
+    await context.answerCallbackQuery(translate(getLocale(setup.userId), 'report.stale'));
+    return;
+  }
+
+  const existing = await apiClient.findEditableReport(setup.userId, {
+    type: selected.type,
+    periodStart: selected.periodStart,
+    periodEnd: selected.periodEnd,
+  });
+  if (!existing || existing.id !== selected.id) {
+    await context.answerCallbackQuery(translate(getLocale(setup.userId), 'report.stale'));
+    return;
+  }
+
+  const session = configuredReportSession(
+    setup.userId,
+    setup.authorName,
+    setup.startDate,
+    setup.collector,
+    setup.savedDailySections,
+    setup.savedWeeklySections,
+  );
+  session.calendar = calculateReportCalendar(selected.periodStart, setup.startDate);
+  selectExistingReport(session, selected.type, existing);
+
+  const started = mode === 'edit' ? editExistingReport(session) : refillExistingReport(session);
+  if (!started) {
+    await context.answerCallbackQuery({
+      text: translate(getLocale(setup.userId), 'report.legacyEditUnavailable'),
+      show_alert: true,
+    });
+    return;
+  }
+
+  setupSessionsByUserId.delete(setup.userId);
+  sessionsByUserId.set(setup.userId, session);
+  claimTextInput(setup.userId, 'report');
+  await context.answerCallbackQuery();
+  await refreshCollector(context.api, session);
+}
+
 async function processReportInput(
   telegramApi: TelegramApi,
   session: ReportSession,
@@ -1408,6 +1504,7 @@ async function showReportHistory(
   });
   setup.step = 'report-history-list';
   setup.historyPage = page;
+  setup.historySelectedReport = null;
   releaseTextInput(setup.userId, 'report');
   const locale = getLocale(setup.userId);
 
