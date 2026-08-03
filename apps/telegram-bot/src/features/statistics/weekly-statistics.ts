@@ -99,6 +99,12 @@ export function buildWeeklyStatisticsKeyboard(
     );
   }
 
+  if (periodStart < shiftDateKey(latestPeriodStart, -7)) {
+    keyboard
+      .row()
+      .text(translate(locale, 'statistics.latest'), `statistics:week:${latestPeriodStart}`);
+  }
+
   return keyboard;
 }
 
