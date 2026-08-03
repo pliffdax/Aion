@@ -1,7 +1,7 @@
 import type { v1 } from '@aion/contracts';
 import { InlineKeyboard } from 'grammy';
 import { escapeHtml } from '../../core/formatting/html.js';
-import { dateLocale, translate, type Locale } from '../../core/i18n/i18n.js';
+import { translate, type Locale } from '../../core/i18n/i18n.js';
 import { shiftDateKey } from '../../core/time/kyiv-calendar.js';
 
 export function latestCompletedWeekStart(dateKey: string): string {
@@ -51,8 +51,8 @@ export function renderWeeklyStatistics(statistics: v1.TelegramWeeklyPlanStatisti
   const lines = [
     translate(locale, 'statistics.weeklyTitle'),
     translate(locale, 'statistics.period', {
-      start: formatDate(locale, statistics.periodStart),
-      end: formatDate(locale, statistics.periodEnd),
+      start: formatDate(statistics.periodStart),
+      end: formatDate(statistics.periodEnd),
     }),
     '',
     translate(locale, 'statistics.tasks', { count: statistics.taskCount }),
@@ -108,11 +108,6 @@ export function buildWeeklyStatisticsKeyboard(
   return keyboard;
 }
 
-function formatDate(locale: Locale, dateKey: string): string {
-  return new Intl.DateTimeFormat(dateLocale(locale), {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(`${dateKey}T00:00:00.000Z`));
+function formatDate(dateKey: string): string {
+  return formatStatisticsDateInput(dateKey);
 }

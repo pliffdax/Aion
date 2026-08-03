@@ -40,7 +40,7 @@ export function buildReportMenuKeyboard(locale: Locale): InlineKeyboard {
     .row()
     .text(translate(locale, 'report.settings'), 'report:menu:settings')
     .row()
-    .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+    .text(translate(locale, 'report.close'), 'report:setup:cancel');
 }
 
 export function renderReportHistory(
@@ -51,7 +51,12 @@ export function renderReportHistory(
   const filter = type
     ? reportHistoryTypeLabel(locale, type)
     : translate(locale, 'report.historyAll');
-  const hint = reports.length > 0 ? 'report.historyHint' : 'report.historyEmpty';
+  const hint =
+    type === 'weekly_statistics'
+      ? 'report.historyStatisticsHint'
+      : reports.length > 0
+        ? 'report.historyHint'
+        : 'report.historyEmpty';
 
   return [
     translate(locale, 'report.historyTitle'),
@@ -88,7 +93,7 @@ export function buildReportHistoryKeyboard(
     .row();
 
   for (const report of reports) {
-    keyboard.text(reportHistoryLabel(report), `report:history:item:${report.id}`).row();
+    keyboard.text(reportHistoryLabel(locale, report), `report:history:item:${report.id}`).row();
   }
 
   if (options.hasPrevious) {
@@ -102,11 +107,24 @@ export function buildReportHistoryKeyboard(
   return keyboard.text(translate(locale, 'report.back'), 'report:history:menu');
 }
 
-export function buildReportHistoryItemKeyboard(locale: Locale): InlineKeyboard {
-  return new InlineKeyboard()
+export function buildReportHistoryItemKeyboard(
+  locale: Locale,
+  type: v1.TelegramReportType,
+): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+
+  if (type !== 'weekly_statistics') {
+    keyboard
+      .text(translate(locale, 'report.existingEdit'), 'report:history:edit')
+      .row()
+      .text(translate(locale, 'report.existingRefill'), 'report:history:refill')
+      .row();
+  }
+
+  return keyboard
     .text(translate(locale, 'report.back'), 'report:history:list')
     .row()
-    .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+    .text(translate(locale, 'report.close'), 'report:setup:cancel');
 }
 
 export function renderExistingReportMenu(
@@ -137,20 +155,26 @@ export function buildExistingReportKeyboard(locale: Locale): InlineKeyboard {
     .row()
     .text(translate(locale, 'report.back'), 'report:existing:type-back')
     .row()
-    .text(translate(locale, 'report.cancel'), 'report:cancel');
+    .text(translate(locale, 'report.close'), 'report:close');
 }
 
 export function buildExistingReportOpenKeyboard(locale: Locale): InlineKeyboard {
   return new InlineKeyboard()
+    .text(translate(locale, 'report.existingEdit'), 'report:existing:edit')
+    .row()
+    .text(translate(locale, 'report.existingRefill'), 'report:existing:refill')
+    .row()
     .text(translate(locale, 'report.back'), 'report:existing:back')
     .row()
-    .text(translate(locale, 'report.cancel'), 'report:cancel');
+    .text(translate(locale, 'report.close'), 'report:close');
 }
 
-function reportHistoryLabel(report: v1.TelegramReportDto): string {
+function reportHistoryLabel(locale: Locale, report: v1.TelegramReportDto): string {
   if (report.type === 'daily') return `☀️ ${formatDate(report.periodStart)}`;
-  const icon = report.type === 'weekly_statistics' ? '📈' : '📊';
-  return `${icon} ${formatDate(report.periodStart)} — ${formatDate(report.periodEnd)}`;
+  if (report.type === 'weekly_statistics') {
+    return `📈 ${translate(locale, 'report.historyStatisticsItem')} · ${formatDate(report.periodStart)} — ${formatDate(report.periodEnd)}`;
+  }
+  return `📊 ${formatDate(report.periodStart)} — ${formatDate(report.periodEnd)}`;
 }
 
 function reportHistoryTypeLabel(locale: Locale, type: v1.TelegramReportType): string {
@@ -175,7 +199,7 @@ export function buildReportSettingsKeyboard(locale: Locale): InlineKeyboard {
     .row()
     .text(translate(locale, 'report.back'), 'report:settings:back')
     .row()
-    .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+    .text(translate(locale, 'report.close'), 'report:setup:cancel');
 }
 
 export function renderReportSectionConfiguration(
@@ -221,7 +245,7 @@ export function buildReportSectionConfigurationKeyboard(
     .row()
     .text(translate(locale, 'report.back'), 'report:settings:back')
     .row()
-    .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+    .text(translate(locale, 'report.close'), 'report:setup:cancel');
 }
 
 export function renderReportFieldEditor(locale: Locale, field: ReportField): string {
@@ -274,14 +298,14 @@ export function buildReportFieldEditorKeyboard(locale: Locale, field: ReportFiel
     .row()
     .text(translate(locale, 'report.back'), 'report:field:back')
     .row()
-    .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+    .text(translate(locale, 'report.close'), 'report:setup:cancel');
 }
 
 export function buildReportFieldTextInputKeyboard(locale: Locale): InlineKeyboard {
   return new InlineKeyboard()
     .text(translate(locale, 'report.back'), 'report:field:editor-back')
     .row()
-    .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+    .text(translate(locale, 'report.close'), 'report:setup:cancel');
 }
 
 export function renderCollector(session: ReportSession): string {
@@ -325,14 +349,14 @@ export function buildTypeKeyboard(locale: Locale): InlineKeyboard {
 }
 
 export function buildReportSetupCancelKeyboard(locale: Locale): InlineKeyboard {
-  return new InlineKeyboard().text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+  return new InlineKeyboard().text(translate(locale, 'report.close'), 'report:setup:cancel');
 }
 
 export function buildReportSetupBackAndCancelKeyboard(locale: Locale): InlineKeyboard {
   return new InlineKeyboard()
     .text(translate(locale, 'report.back'), 'report:setup:back')
     .row()
-    .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+    .text(translate(locale, 'report.close'), 'report:setup:cancel');
 }
 
 export function buildReportStartDateKeyboard(locale: Locale): InlineKeyboard {
@@ -345,7 +369,7 @@ export function buildReportStartDateKeyboard(locale: Locale): InlineKeyboard {
     .row()
     .text(translate(locale, 'report.back'), 'report:setup:back')
     .row()
-    .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+    .text(translate(locale, 'report.close'), 'report:setup:cancel');
 }
 
 function renderStepContent(session: ReportSession, field: ReportField, locale: Locale): string[] {

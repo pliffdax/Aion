@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { v1 } from '@aion/contracts';
 import { Bot } from 'grammy';
 import type { AionApiClient } from '../../core/api/aion-api-client.js';
+import { isTelegramMessageNotModified } from '../../core/telegram-errors.js';
 import { registerStatisticsHandlers } from './statistics.command.js';
 import {
   buildWeeklyStatisticsKeyboard,
@@ -35,9 +36,21 @@ test('finds the latest fully completed Monday-to-Sunday week', () => {
   assert.equal(latestCompletedWeekStart('2026-08-09'), '2026-07-27');
 });
 
+test('recognizes a harmless repeated Telegram panel edit', () => {
+  assert.equal(
+    isTelegramMessageNotModified({
+      description: 'Bad Request: message is not modified: content is unchanged',
+    }),
+    true,
+  );
+  assert.equal(isTelegramMessageNotModified(new Error('network unavailable')), false);
+});
+
 test('renders weekly metrics and escapes task text', () => {
   const text = renderWeeklyStatistics(statistics);
 
+  assert.match(text, /Статистика планов за неделю/);
+  assert.match(text, /03\.08\.2026 — 09\.08\.2026/);
   assert.match(text, /Выполнено: <b>1\/2<\/b> \(50%\)/);
   assert.match(text, /Всего переносов: <b>3<\/b>/);
   assert.match(text, /2× Сложная &lt;задача&gt;/);

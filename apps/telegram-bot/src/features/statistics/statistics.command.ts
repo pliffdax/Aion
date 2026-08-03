@@ -8,6 +8,7 @@ import {
   releaseTextInput,
 } from '../../core/interactions/text-input-owner.js';
 import { currentKyivDateKey } from '../../core/time/kyiv-calendar.js';
+import { isTelegramMessageNotModified } from '../../core/telegram-errors.js';
 import {
   buildWeeklyStatisticsKeyboard,
   formatStatisticsDateInput,
@@ -200,10 +201,18 @@ async function showWeek(
 
   const statistics = await apiClient.getWeeklyPlanStatistics(userId, periodStart);
   await context.answerCallbackQuery();
-  await context.editMessageText(renderWeeklyStatistics(statistics), {
-    parse_mode: 'HTML',
-    reply_markup: buildWeeklyStatisticsKeyboard(getLocale(userId), periodStart, latestPeriodStart),
-  });
+  await context
+    .editMessageText(renderWeeklyStatistics(statistics), {
+      parse_mode: 'HTML',
+      reply_markup: buildWeeklyStatisticsKeyboard(
+        getLocale(userId),
+        periodStart,
+        latestPeriodStart,
+      ),
+    })
+    .catch(error => {
+      if (!isTelegramMessageNotModified(error)) throw error;
+    });
 }
 
 function requireApiClient(): AionApiClient {

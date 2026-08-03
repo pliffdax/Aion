@@ -10,6 +10,7 @@ import {
   telegramUpdateFields,
 } from './core/logging/logger.js';
 import { getLocale, setLocale, translate } from './core/i18n/i18n.js';
+import { isTelegramMessageNotModified } from './core/telegram-errors.js';
 import { registerDailyPlanHandlers } from './features/daily-plan/plan.command.js';
 import { registerLanguageHandlers } from './features/language/language.command.js';
 import { registerReminderHandlers } from './features/reminder/reminder.command.js';
@@ -102,6 +103,8 @@ export async function createBot(
   registerWhoamiHandlers(bot, ownerId);
 
   bot.catch(async error => {
+    if (isTelegramMessageNotModified(error.error)) return;
+
     logError('telegram.update.failed', {
       ...telegramContextFields(error.ctx),
       ...telegramUpdateFields(error.ctx),
