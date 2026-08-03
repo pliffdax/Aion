@@ -72,6 +72,7 @@ model DailyPlanItem {
   dailyPlanId       String
   carriedFromItemId String?
   text              String   @db.VarChar(160)
+  description       String?  @db.VarChar(2000)
   completed         Boolean  @default(false)
   position          Int
   createdAt         DateTime @default(now())

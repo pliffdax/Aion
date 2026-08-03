@@ -56,11 +56,13 @@ export class AionApiClient {
     telegramUserId: number,
     date: string,
     text: string,
+    description?: string,
   ): Promise<v1.TelegramDailyPlanDto> {
     return this.request('/telegram/daily-plans/items', v1.TelegramDailyPlanDtoSchema, 'POST', {
       telegramUserId: String(telegramUserId),
       date,
       text,
+      ...(description !== undefined ? { description } : {}),
     });
   }
 
@@ -68,7 +70,7 @@ export class AionApiClient {
     telegramUserId: number,
     date: string,
     itemId: string,
-    fields: { text?: string; completed?: boolean },
+    fields: { text?: string; description?: string | null; completed?: boolean },
   ): Promise<v1.TelegramDailyPlanDto> {
     return this.request('/telegram/daily-plans/items', v1.TelegramDailyPlanDtoSchema, 'PATCH', {
       telegramUserId: String(telegramUserId),

@@ -97,7 +97,7 @@ export async function createBot(
   registerLanguageHandlers(bot, commands, ownerId, apiClient);
   registerReminderHandlers(bot, apiClient);
   registerReportHandlers(bot, apiClient);
-  registerWhoamiHandlers(bot);
+  registerWhoamiHandlers(bot, ownerId);
 
   bot.catch(async error => {
     logError('telegram.update.failed', {
