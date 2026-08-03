@@ -40,7 +40,12 @@ type DailyPlanRecord = Prisma.DailyPlanGetPayload<typeof planWithItems>;
 type ReminderRecord = Prisma.TelegramReminderGetPayload<typeof reminderWithUser>;
 type DatabaseClient = Pick<
   Prisma.TransactionClient,
-  'telegramUser' | 'dailyPlan' | 'dailyPlanItem' | 'telegramReminder' | 'telegramReport'
+  | 'telegramUser'
+  | 'dailyPlan'
+  | 'dailyPlanItem'
+  | 'telegramReminder'
+  | 'telegramReport'
+  | 'telegramReportRevision'
 >;
 
 @Injectable()
@@ -137,6 +142,12 @@ export class TelegramService {
           periodStart,
           periodEnd,
           text: dto.text,
+          ...(dto.answers
+            ? {
+                answers: dto.answers as Prisma.InputJsonValue,
+                configuration: dto.configuration as Prisma.InputJsonValue,
+              }
+            : {}),
         },
         update: {},
       });
@@ -263,6 +274,80 @@ export class TelegramService {
 
     if (!report) throw new NotFoundException('Sent report not found');
     return toReportDto(report);
+  }
+
+  async findEditableReport(
+    dto: v1.FindEditableTelegramReportDto,
+  ): Promise<v1.EditableTelegramReportDto | null> {
+    const report = await this.prisma.telegramReport.findFirst({
+      where: {
+        user: { telegramId: BigInt(dto.telegramUserId) },
+        type: toPrismaReportType(dto.type),
+        periodStart: parseReportDate(dto.periodStart),
+        periodEnd: parseReportDate(dto.periodEnd),
+        deliveryStatus: TelegramReportDeliveryStatus.SENT,
+      },
+      include: { user: true },
+    });
+
+    return report ? toEditableReportDto(report) : null;
+  }
+
+  async replaceReport(dto: v1.ReplaceTelegramReportDto): Promise<v1.EditableTelegramReportDto> {
+    return this.prisma.$transaction(async transaction => {
+      const report = await transaction.telegramReport.findFirst({
+        where: {
+          id: dto.reportId,
+          user: { telegramId: BigInt(dto.telegramUserId) },
+          type: { in: [TelegramReportType.DAILY, TelegramReportType.WEEKLY] },
+          deliveryStatus: TelegramReportDeliveryStatus.SENT,
+        },
+        include: { user: true },
+      });
+
+      if (!report) throw new NotFoundException('Editable report not found');
+      if (report.revision !== dto.expectedRevision) {
+        throw new ConflictException('Report was updated by another session');
+      }
+
+      const replacement = await transaction.telegramReport.updateMany({
+        where: {
+          id: report.id,
+          revision: dto.expectedRevision,
+          deliveryStatus: TelegramReportDeliveryStatus.SENT,
+        },
+        data: {
+          text: dto.text,
+          answers: dto.answers as Prisma.InputJsonValue,
+          configuration: dto.configuration as Prisma.InputJsonValue,
+          telegramMessageId: BigInt(dto.telegramMessageId),
+          revision: { increment: 1 },
+          lastError: null,
+        },
+      });
+      if (replacement.count !== 1) {
+        throw new ConflictException('Report was updated by another session');
+      }
+
+      await transaction.telegramReportRevision.create({
+        data: {
+          reportId: report.id,
+          revision: report.revision,
+          text: report.text,
+          answers: report.answers ?? Prisma.DbNull,
+          configuration: report.configuration ?? Prisma.DbNull,
+          telegramMessageId: report.telegramMessageId,
+          sentAt: report.sentAt,
+        },
+      });
+      const updated = await transaction.telegramReport.findFirst({
+        where: { id: report.id },
+        include: { user: true },
+      });
+      if (!updated) throw new NotFoundException('Editable report not found after replacement');
+
+      return toEditableReportDto(updated);
+    });
   }
 
   async getOrCreateDailyPlan(
@@ -869,6 +954,31 @@ function toReportDto(report: {
     text: report.text,
     createdAt: report.createdAt.toISOString(),
     sentAt: report.sentAt.toISOString(),
+  };
+}
+
+function toEditableReportDto(report: {
+  id: string;
+  type: TelegramReportType;
+  periodStart: Date;
+  periodEnd: Date;
+  text: string;
+  answers: Prisma.JsonValue | null;
+  configuration: Prisma.JsonValue | null;
+  revision: number;
+  telegramMessageId: bigint | null;
+  createdAt: Date;
+  sentAt: Date | null;
+  user: { telegramId: bigint };
+}): v1.EditableTelegramReportDto {
+  return {
+    ...toReportDto(report),
+    answers: report.answers ? v1.TelegramReportAnswersSchema.parse(report.answers) : null,
+    configuration: report.configuration
+      ? v1.TelegramReportSectionsSchema.parse(report.configuration)
+      : null,
+    revision: report.revision,
+    telegramMessageId: report.telegramMessageId?.toString() ?? null,
   };
 }
 

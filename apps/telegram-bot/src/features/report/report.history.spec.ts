@@ -5,6 +5,9 @@ import {
   buildReportHistoryItemKeyboard,
   buildReportHistoryKeyboard,
   buildReportMenuKeyboard,
+  buildExistingReportKeyboard,
+  buildExistingReportOpenKeyboard,
+  renderExistingReportMenu,
   renderReportHistory,
 } from './report.view.js';
 
@@ -46,7 +49,41 @@ test('history makes the migration boundary and selected filter explicit', () => 
   assert.match(renderReportHistory('ru', 'weekly_statistics', []), /Статистика/);
 });
 
+test('existing report menu exposes open, edit, and refill actions', () => {
+  const editableReport: v1.EditableTelegramReportDto = {
+    ...dailyReport,
+    answers: null,
+    configuration: null,
+    revision: 1,
+    telegramMessageId: '77',
+  };
+
+  assert.deepEqual(callbacks(buildExistingReportKeyboard('ru')), [
+    'report:existing:open',
+    'report:existing:edit',
+    'report:existing:refill',
+    'report:existing:type-back',
+    'report:cancel',
+  ]);
+  assert.deepEqual(callbacks(buildExistingReportOpenKeyboard('ru')), [
+    'report:existing:back',
+    'report:cancel',
+  ]);
+  assert.match(renderExistingReportMenu('ru', editableReport), /Отчёт уже создан/);
+});
+
 test('report history contracts validate exact periods, pagination, and claim outcomes', () => {
+  assert.equal(
+    v1.ClaimTelegramReportDeliveryDtoSchema.safeParse({
+      telegramUserId: '123',
+      type: 'daily',
+      periodStart: '2026-08-03',
+      periodEnd: '2026-08-03',
+      text: 'Report',
+      answers: {},
+    }).success,
+    false,
+  );
   assert.equal(
     v1.ClaimTelegramReportDeliveryDtoSchema.safeParse({
       telegramUserId: '123',

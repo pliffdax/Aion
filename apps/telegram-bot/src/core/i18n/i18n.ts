@@ -292,6 +292,29 @@ const translations = {
   'report.historyStatistics': ['Статистика', 'Статистика', 'Statistics'],
   'report.historyPrevious': ['⬅️ Новее', '⬅️ Новіші', '⬅️ Newer'],
   'report.historyNext': ['Раньше ➡️', 'Раніші ➡️', 'Older ➡️'],
+  'report.existingTitle': [
+    '<b>Отчёт уже создан</b>',
+    '<b>Звіт уже створено</b>',
+    '<b>Report already exists</b>',
+  ],
+  'report.existingPeriod': [
+    '{type}: <code>{start} — {end}</code>',
+    '{type}: <code>{start} — {end}</code>',
+    '{type}: <code>{start} — {end}</code>',
+  ],
+  'report.existingHint': [
+    'Можно открыть его, изменить сохранённые ответы или заполнить заново.',
+    'Можна відкрити його, змінити збережені відповіді або заповнити заново.',
+    'You can open it, edit the saved answers, or fill it in again.',
+  ],
+  'report.existingOpen': ['📄 Открыть', '📄 Відкрити', '📄 Open'],
+  'report.existingEdit': ['✏️ Редактировать', '✏️ Редагувати', '✏️ Edit'],
+  'report.existingRefill': ['🔄 Заполнить заново', '🔄 Заповнити заново', '🔄 Fill again'],
+  'report.legacyEditUnavailable': [
+    'Этот отчёт создан до поддержки редактирования. Его можно заполнить заново.',
+    'Цей звіт створено до підтримки редагування. Його можна заповнити заново.',
+    'This report predates editable answers. You can fill it in again.',
+  ],
   'report.deliveryBusy': [
     'Отчёт уже отправляется. Подождите немного и попробуйте ещё раз.',
     'Звіт уже надсилається. Зачекайте трохи й спробуйте ще раз.',

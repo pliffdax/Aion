@@ -30,7 +30,9 @@ import {
   currentItems,
   currentText,
   currentTypeAnswers,
+  clearExistingReportSelection,
   draftCharacterCount,
+  editExistingReport,
   isBooleanStep,
   isListStep,
   isRatingStep,
@@ -39,6 +41,9 @@ import {
   normalizeItem,
   parseItems,
   retreatReportStep,
+  refillExistingReport,
+  sectionsForType,
+  selectExistingReport,
   setReportType,
   setCurrentText,
   shouldKeepReportCollector,
@@ -50,6 +55,8 @@ import {
 } from './report.session.js';
 import {
   buildReportMenuKeyboard,
+  buildExistingReportKeyboard,
+  buildExistingReportOpenKeyboard,
   buildReportHistoryItemKeyboard,
   buildReportHistoryKeyboard,
   buildReportFieldEditorKeyboard,
@@ -62,6 +69,7 @@ import {
   buildReportStartDateKeyboard,
   buildTypeKeyboard,
   renderReportMenu,
+  renderExistingReportMenu,
   renderReportHistory,
   renderReportFieldEditor,
   renderReportSectionConfiguration,
@@ -656,9 +664,78 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
   bot.callbackQuery(/^report:type:(daily|weekly)$/, async context => {
     const session = await activeSession(context);
     if (!session) return;
+    const type = context.match[1] as ReportType;
+    const period = calculateReportPeriod(type, session.calendar, session.startDate);
+    const existingReport = await apiClient.findEditableReport(session.userId, {
+      type,
+      ...period,
+    });
 
-    setReportType(session, context.match[1] as ReportType);
+    await context.answerCallbackQuery();
 
+    if (existingReport) {
+      selectExistingReport(session, type, existingReport);
+      releaseTextInput(session.userId, 'report');
+      await showExistingReportMenu(context.api, session);
+      return;
+    }
+
+    setReportType(session, type);
+    claimTextInput(session.userId, 'report');
+    await refreshCollector(context.api, session);
+  });
+
+  bot.callbackQuery('report:existing:open', async context => {
+    const session = await activeSession(context);
+    if (!session?.existingReport || session.replaceMode) return;
+
+    await context.answerCallbackQuery();
+    await context.editMessageText(session.existingReport.text, {
+      parse_mode: 'HTML',
+      reply_markup: buildExistingReportOpenKeyboard(getLocale(session.userId)),
+    });
+  });
+
+  bot.callbackQuery('report:existing:back', async context => {
+    const session = await activeSession(context);
+    if (!session?.existingReport || session.replaceMode) return;
+
+    await context.answerCallbackQuery();
+    await showExistingReportMenu(context.api, session);
+  });
+
+  bot.callbackQuery('report:existing:type-back', async context => {
+    const session = await activeSession(context);
+    if (!session?.existingReport || session.replaceMode) return;
+
+    clearExistingReportSelection(session);
+    releaseTextInput(session.userId, 'report');
+    await context.answerCallbackQuery();
+    await refreshCollector(context.api, session);
+  });
+
+  bot.callbackQuery('report:existing:edit', async context => {
+    const session = await activeSession(context);
+    if (!session?.existingReport || session.replaceMode) return;
+
+    if (!editExistingReport(session)) {
+      await context.answerCallbackQuery({
+        text: translate(getLocale(session.userId), 'report.legacyEditUnavailable'),
+        show_alert: true,
+      });
+      return;
+    }
+
+    claimTextInput(session.userId, 'report');
+    await context.answerCallbackQuery();
+    await refreshCollector(context.api, session);
+  });
+
+  bot.callbackQuery('report:existing:refill', async context => {
+    const session = await activeSession(context);
+    if (!session?.existingReport || session.replaceMode || !refillExistingReport(session)) return;
+
+    claimTextInput(session.userId, 'report');
     await context.answerCallbackQuery();
     await refreshCollector(context.api, session);
   });
@@ -706,6 +783,17 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
   bot.callbackQuery('report:back', async context => {
     const session = await activeSession(context);
     if (!session || session.type === null) return;
+
+    if (session.existingReport && session.replaceMode && session.fieldIndex === 0) {
+      session.type = session.existingReport.type as ReportType;
+      session.fieldIndex = null;
+      session.editingItemId = null;
+      session.replaceMode = null;
+      releaseTextInput(session.userId, 'report');
+      await context.answerCallbackQuery();
+      await showExistingReportMenu(context.api, session);
+      return;
+    }
 
     retreatReportStep(session);
     await context.answerCallbackQuery();
@@ -1404,6 +1492,23 @@ async function refreshCollector(telegramApi: TelegramApi, session: ReportSession
   );
 }
 
+async function showExistingReportMenu(
+  telegramApi: TelegramApi,
+  session: ReportSession,
+): Promise<void> {
+  if (!session.existingReport) throw new Error('Existing report is required');
+  const locale = getLocale(session.userId);
+  await telegramApi.editMessageText(
+    session.collector.chatId,
+    session.collector.messageId,
+    renderExistingReportMenu(locale, session.existingReport),
+    {
+      parse_mode: 'HTML',
+      reply_markup: buildExistingReportKeyboard(locale),
+    },
+  );
+}
+
 async function finishReport(telegramApi: TelegramApi, session: ReportSession): Promise<void> {
   if (!session.type) throw new Error('A report type is required to finish a report');
   if (finishingReportUserIds.has(session.userId)) return;
@@ -1425,12 +1530,21 @@ async function finishReport(telegramApi: TelegramApi, session: ReportSession): P
         );
   const apiClient = requireApiClient();
   const period = calculateReportPeriod(session.type, session.calendar, session.startDate);
+  const configuration = sectionsForType(session, session.type);
 
   try {
+    if (session.existingReport && session.replaceMode) {
+      await replaceExistingReport(telegramApi, apiClient, session, report, answers, configuration);
+      await closeReportCollector(telegramApi, session);
+      return;
+    }
+
     const claim = await apiClient.claimReportDelivery(session.userId, {
       type: session.type,
       ...period,
       text: report,
+      answers,
+      configuration,
     });
 
     if (shouldKeepReportCollector(claim.outcome)) {
@@ -1462,14 +1576,66 @@ async function finishReport(telegramApi: TelegramApi, session: ReportSession): P
       );
     }
 
-    sessionsByUserId.delete(session.userId);
-    releaseTextInput(session.userId, 'report');
-    await telegramApi
-      .deleteMessage(session.collector.chatId, session.collector.messageId)
-      .catch(() => undefined);
+    await closeReportCollector(telegramApi, session);
   } finally {
     finishingReportUserIds.delete(session.userId);
   }
+}
+
+async function replaceExistingReport(
+  telegramApi: TelegramApi,
+  apiClient: AionApiClient,
+  session: ReportSession,
+  text: string,
+  answers: v1.TelegramReportAnswers,
+  configuration: v1.TelegramReportField[],
+): Promise<void> {
+  const existing = session.existingReport;
+  if (!existing) throw new Error('Existing report is required');
+  const existingMessageId = Number(existing.telegramMessageId);
+  let telegramMessageId: number | null = null;
+
+  if (Number.isSafeInteger(existingMessageId) && existingMessageId > 0) {
+    if (existing.text === text) {
+      telegramMessageId = existingMessageId;
+    } else {
+      await telegramApi
+        .editMessageText(session.collector.chatId, existingMessageId, text, {
+          parse_mode: 'HTML',
+        })
+        .then(() => {
+          telegramMessageId = existingMessageId;
+        })
+        .catch(() => undefined);
+    }
+  }
+
+  if (!telegramMessageId) {
+    const message = await telegramApi.sendMessage(session.collector.chatId, text, {
+      parse_mode: 'HTML',
+    });
+    telegramMessageId = message.message_id;
+  }
+
+  await apiClient.replaceReport(session.userId, {
+    reportId: existing.id,
+    expectedRevision: existing.revision,
+    text,
+    answers,
+    configuration,
+    telegramMessageId: String(telegramMessageId),
+  });
+}
+
+async function closeReportCollector(
+  telegramApi: TelegramApi,
+  session: ReportSession,
+): Promise<void> {
+  sessionsByUserId.delete(session.userId);
+  releaseTextInput(session.userId, 'report');
+  await telegramApi
+    .deleteMessage(session.collector.chatId, session.collector.messageId)
+    .catch(() => undefined);
 }
 
 async function advanceOrFinishReport(

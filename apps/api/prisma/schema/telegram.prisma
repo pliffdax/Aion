@@ -38,6 +38,9 @@ model TelegramReport {
   periodStart       DateTime                     @db.Date
   periodEnd         DateTime                     @db.Date
   text              String                       @db.Text
+  answers           Json?
+  configuration     Json?
+  revision          Int                          @default(1)
   deliveryStatus    TelegramReportDeliveryStatus @default(PENDING)
   deliveryToken     String?                      @unique @db.VarChar(36)
   claimedAt         DateTime?                    @db.Timestamptz(3)
@@ -45,13 +48,32 @@ model TelegramReport {
   telegramMessageId BigInt?
   lastError         String?                      @db.VarChar(500)
   createdAt         DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime                     @updatedAt @db.Timestamptz(3)
 
-  user TelegramUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      TelegramUser             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  revisions TelegramReportRevision[]
 
   @@unique([userId, type, periodStart, periodEnd])
   @@index([userId, deliveryStatus, createdAt])
   @@index([userId, type, periodStart])
   @@index([deliveryStatus, claimedAt])
+}
+
+model TelegramReportRevision {
+  id                String    @id @default(cuid())
+  reportId          String
+  revision          Int
+  text              String    @db.Text
+  answers           Json?
+  configuration     Json?
+  telegramMessageId BigInt?
+  sentAt            DateTime? @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @db.Timestamptz(3)
+
+  report TelegramReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, revision])
+  @@index([reportId, createdAt])
 }
 
 model TelegramReminder {
