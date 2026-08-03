@@ -556,6 +556,7 @@ const translations = {
   'statistics.previous': ['⬅️ Раньше', '⬅️ Раніше', '⬅️ Earlier'],
   'statistics.chooseDate': ['📅 Выбрать дату', '📅 Обрати дату', '📅 Choose date'],
   'statistics.next': ['Позже ➡️', 'Пізніше ➡️', 'Later ➡️'],
+  'statistics.latest': ['⏩ К последней неделе', '⏩ До останнього тижня', '⏩ Latest week'],
   'statistics.datePrompt': [
     '<b>📅 Выбор недели</b>\n\nВведите любую дату нужной недели в формате <code>ДД.ММ.ГГГГ</code>.\nНапример: <code>{example}</code>',
     '<b>📅 Вибір тижня</b>\n\nВведіть будь-яку дату потрібного тижня у форматі <code>ДД.ММ.РРРР</code>.\nНаприклад: <code>{example}</code>',

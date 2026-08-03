@@ -55,6 +55,14 @@ test('only offers a later week when it is already complete', () => {
     'statistics:date:2026-07-27',
     'statistics:week:2026-08-03',
   ]);
+  const distantKeyboard = buildWeeklyStatisticsKeyboard('ru', '2026-07-20', '2026-08-03');
+  assert.deepEqual(callbacks(distantKeyboard), [
+    'statistics:week:2026-07-13',
+    'statistics:date:2026-07-20',
+    'statistics:week:2026-07-27',
+    'statistics:week:2026-08-03',
+  ]);
+  assert.equal(distantKeyboard.inline_keyboard[1]?.[0]?.text, '⏩ К последней неделе');
 });
 
 test('parses a selected calendar date and resolves its Monday', () => {
