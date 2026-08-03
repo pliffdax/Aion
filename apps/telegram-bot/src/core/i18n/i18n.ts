@@ -123,9 +123,9 @@ const translations = {
     'Could not find the plan message. Run /plan again.',
   ],
   'daily.addPrompt': [
-    'Напишите новый пункт плана.',
-    'Напишіть новий пункт плану.',
-    'Enter a new plan item.',
+    'Напишите название нового пункта — до {max} символов.',
+    'Напишіть назву нового пункту — до {max} символів.',
+    'Enter the new item title — up to {max} characters.',
   ],
   'daily.itemDraft': ['Пункт плана:', 'Пункт плану:', 'Plan item:'],
   'daily.descriptionChoice': [
@@ -136,11 +136,11 @@ const translations = {
   'daily.addDescription': ['📝 Добавить описание', '📝 Додати опис', '📝 Add description'],
   'daily.withoutDescription': ['✅ Без описания', '✅ Без опису', '✅ No description'],
   'daily.descriptionPrompt': [
-    'Напишите описание пункта — до {max} символов.',
-    'Напишіть опис пункту — до {max} символів.',
-    'Enter the item description — up to {max} characters.',
+    'Напишите описание пункта — до {max} символов. В общем плане оно не отображается.',
+    'Напишіть опис пункту — до {max} символів. У загальному плані він не відображається.',
+    'Enter the item description — up to {max} characters. It is hidden from the main plan.',
   ],
-  'daily.itemLabel': ['Пункт:', 'Пункт:', 'Item:'],
+  'daily.titleLabel': ['Название:', 'Назва:', 'Title:'],
   'daily.descriptionLabel': ['Описание:', 'Опис:', 'Description:'],
   'daily.noDescription': ['Описание не добавлено.', 'Опис не додано.', 'No description added.'],
   'daily.clearDescription': ['🗑 Удалить описание', '🗑 Видалити опис', '🗑 Remove description'],
@@ -156,9 +156,9 @@ const translations = {
   'daily.deletePrompt': ['Удалить пункт?', 'Видалити пункт?', 'Delete this item?'],
   'daily.delete': ['🗑 Удалить', '🗑 Видалити', '🗑 Delete'],
   'daily.editPrompt': [
-    'Введите новый текст для пункта:',
-    'Введіть новий текст для пункту:',
-    'Enter new text for the item:',
+    'Введите новое название пункта — до {max} символов:',
+    'Введіть нову назву пункту — до {max} символів:',
+    'Enter the new item title — up to {max} characters:',
   ],
   'daily.itemDeleted': ['Пункт удалён', 'Пункт видалено', 'Item deleted'],
   'daily.itemMissing': [
@@ -191,6 +191,15 @@ const translations = {
   'daily.emptyPlan': ['План пока пуст.', 'План поки порожній.', 'The plan is empty.'],
   'daily.completed': ['выполнено', 'виконано', 'completed'],
   'daily.managementTitle': ['Управление планом', 'Керування планом', 'Plan management'],
+  'daily.managementHint': [
+    'Выберите пункт, чтобы изменить его название или описание.',
+    'Виберіть пункт, щоб змінити його назву або опис.',
+    'Select an item to change its title or description.',
+  ],
+  'daily.itemDetailsTitle': ['Пункт {number}', 'Пункт {number}', 'Item {number}'],
+  'daily.editTitle': ['✏️ Изменить название', '✏️ Змінити назву', '✏️ Change title'],
+  'daily.editDescription': ['📝 Изменить описание', '📝 Змінити опис', '📝 Change description'],
+  'daily.backToManagement': ['⬅️ К списку пунктов', '⬅️ До списку пунктів', '⬅️ Back to items'],
   'daily.noItems': [
     'В плане нет пунктов.',
     'У плані немає пунктів.',
