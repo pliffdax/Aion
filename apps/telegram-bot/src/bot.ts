@@ -14,6 +14,7 @@ import { registerDailyPlanHandlers } from './features/daily-plan/plan.command.js
 import { registerLanguageHandlers } from './features/language/language.command.js';
 import { registerReminderHandlers } from './features/reminder/reminder.command.js';
 import { registerReportHandlers } from './features/report/report.command.js';
+import { registerStatisticsHandlers } from './features/statistics/statistics.command.js';
 import { registerWhoamiHandlers } from './features/whoami/whoami.command.js';
 
 export async function createBot(
@@ -97,6 +98,7 @@ export async function createBot(
   registerLanguageHandlers(bot, commands, ownerId, apiClient);
   registerReminderHandlers(bot, apiClient);
   registerReportHandlers(bot, apiClient);
+  registerStatisticsHandlers(bot, apiClient);
   registerWhoamiHandlers(bot, ownerId);
 
   bot.catch(async error => {

@@ -14,6 +14,7 @@ test('rollover preserves source history and creates fresh incomplete items', asy
     description: null,
     completed: true,
     completedAt: now,
+    carryCount: 0,
     position: 0,
     createdAt: now,
     updatedAt: now,
@@ -24,6 +25,7 @@ test('rollover preserves source history and creates fresh incomplete items', asy
     text: 'Перенести дальше',
     completed: false,
     completedAt: null,
+    carryCount: 2,
     position: 1,
   };
   const sourcePlan = {
@@ -92,7 +94,9 @@ test('rollover preserves source history and creates fresh incomplete items', asy
   assert.equal(carriedData[0]?.carriedFromItemId, incompleteItem.id);
   assert.equal(carriedData[0]?.completed, false);
   assert.equal(carriedData[0]?.completedAt, null);
+  assert.equal(carriedData[0]?.carryCount, 3);
   assert.equal(claims[0]?.sourcePlan.items.length, 2);
   assert.equal(claims[0]?.targetPlan.items[0]?.completed, false);
   assert.equal(claims[0]?.targetPlan.items[0]?.completedAt, null);
+  assert.equal(claims[0]?.targetPlan.items[0]?.carryCount, 3);
 });

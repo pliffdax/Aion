@@ -57,6 +57,11 @@ const translations = {
     'Зібрати особистий звіт',
     'Build a personal report',
   ],
+  'command.stats.description': [
+    'Показать статистику планов',
+    'Показати статистику планів',
+    'Show plan statistics',
+  ],
   'command.reminder.description': [
     'Создать напоминание',
     'Створити нагадування',
@@ -284,6 +289,7 @@ const translations = {
   'report.historyAll': ['Все', 'Усі', 'All'],
   'report.historyDaily': ['Дни', 'Дні', 'Days'],
   'report.historyWeekly': ['Недели', 'Тижні', 'Weeks'],
+  'report.historyStatistics': ['Статистика', 'Статистика', 'Statistics'],
   'report.historyPrevious': ['⬅️ Новее', '⬅️ Новіші', '⬅️ Newer'],
   'report.historyNext': ['Раньше ➡️', 'Раніші ➡️', 'Older ➡️'],
   'report.deliveryBusy': [
@@ -515,6 +521,40 @@ const translations = {
     'Цей конструктор уже неактивний. Викличте /report знову.',
     'This builder is no longer active. Run /report again.',
   ],
+  'statistics.weeklyTitle': [
+    '<b>📈 Статистика недели</b>',
+    '<b>📈 Статистика тижня</b>',
+    '<b>📈 Weekly statistics</b>',
+  ],
+  'statistics.period': ['{start} — {end}', '{start} — {end}', '{start} — {end}'],
+  'statistics.tasks': ['Задач: <b>{count}</b>', 'Завдань: <b>{count}</b>', 'Tasks: <b>{count}</b>'],
+  'statistics.completed': [
+    'Выполнено: <b>{completed}/{total}</b> ({rate}%)',
+    'Виконано: <b>{completed}/{total}</b> ({rate}%)',
+    'Completed: <b>{completed}/{total}</b> ({rate}%)',
+  ],
+  'statistics.unfinished': [
+    'Не выполнено и перенесено: <b>{count}</b>',
+    'Не виконано й перенесено: <b>{count}</b>',
+    'Unfinished and carried over: <b>{count}</b>',
+  ],
+  'statistics.carries': [
+    'Всего переносов: <b>{count}</b>',
+    'Усього переносів: <b>{count}</b>',
+    'Total carry-overs: <b>{count}</b>',
+  ],
+  'statistics.mostCarried': [
+    '<b>Чаще всего переносились:</b>',
+    '<b>Найчастіше переносилися:</b>',
+    '<b>Most frequently carried over:</b>',
+  ],
+  'statistics.noCarried': [
+    'На этой неделе повторных переносов не было.',
+    'Цього тижня повторних переносів не було.',
+    'There were no repeated carry-overs this week.',
+  ],
+  'statistics.previous': ['⬅️ Раньше', '⬅️ Раніше', '⬅️ Earlier'],
+  'statistics.next': ['Позже ➡️', 'Пізніше ➡️', 'Later ➡️'],
   'reminder.menuTitle': ['Напоминания', 'Нагадування', 'Reminders'],
   'reminder.menuHint': [
     'Активных напоминаний: {count}.',

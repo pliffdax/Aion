@@ -12,7 +12,7 @@
     "dev:test": "MODE=test tsx watch src/index.ts",
     "lint": "eslint .",
     "pretest": "pnpm --filter @aion/contracts build",
-    "test": "tsx --test src/core/commands/*.spec.ts src/features/report/*.spec.ts src/features/daily-plan/*.spec.ts",
+    "test": "tsx --test src/core/commands/*.spec.ts src/features/report/*.spec.ts src/features/daily-plan/*.spec.ts src/features/statistics/*.spec.ts",
     "format": "prettier . --write --ignore-path ../../.prettierignore",
     "format:check": "prettier . --check --ignore-path ../../.prettierignore",
     "typecheck": "tsc -p tsconfig.json --noEmit"

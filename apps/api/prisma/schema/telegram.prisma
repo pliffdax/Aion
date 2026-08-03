@@ -21,6 +21,7 @@ model TelegramUser {
 enum TelegramReportType {
   DAILY
   WEEKLY
+  WEEKLY_STATISTICS
 }
 
 enum TelegramReportDeliveryStatus {
@@ -111,6 +112,7 @@ model DailyPlanItem {
   description       String?   @db.VarChar(2000)
   completed         Boolean   @default(false)
   completedAt       DateTime? @db.Timestamptz(3)
+  carryCount        Int       @default(0)
   position          Int
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt

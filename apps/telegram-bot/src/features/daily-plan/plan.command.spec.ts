@@ -21,6 +21,7 @@ const plan: v1.TelegramDailyPlanDto = {
       description: 'Подробности, которых не должно быть в общей панели',
       completed: false,
       completedAt: null,
+      carryCount: 0,
       position: 0,
     },
   ],
@@ -47,6 +48,7 @@ test('hides completed items only in the main panel and offers a reversible actio
     description: null,
     completed: true,
     completedAt: '2026-08-03T12:00:00.000Z',
+    carryCount: 0,
     position: 1,
   };
   const planWithCompleted = { ...plan, items: [...plan.items, completedItem] };
@@ -347,6 +349,7 @@ test('keeps hidden completed items in management and can return them to work', a
     description: null,
     completed: true,
     completedAt: '2026-08-03T12:00:00.000Z',
+    carryCount: 0,
     position: 1,
   };
   let currentPlan: v1.TelegramDailyPlanDto = {

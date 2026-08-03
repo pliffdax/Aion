@@ -222,6 +222,7 @@ async function carryIncompleteItems(
       description: item.description,
       completed: false,
       completedAt: null,
+      carryCount: item.carryCount + 1,
       position: maxPosition + index + 1,
     })),
     skipDuplicates: true,
@@ -255,6 +256,7 @@ function toDailyPlanDto(plan: DailyPlanRecord): v1.TelegramDailyPlanDto {
       description: item.description,
       completed: item.completed,
       completedAt: item.completedAt?.toISOString() ?? null,
+      carryCount: item.carryCount,
       position: item.position,
     })),
   };

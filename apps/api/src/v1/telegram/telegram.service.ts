@@ -790,6 +790,7 @@ function toDailyPlanDto(plan: DailyPlanRecord): v1.TelegramDailyPlanDto {
       description: item.description,
       completed: item.completed,
       completedAt: item.completedAt?.toISOString() ?? null,
+      carryCount: item.carryCount,
       position: item.position,
     })),
   };
@@ -837,7 +838,14 @@ function parseReportDate(value: string): Date {
 }
 
 function toPrismaReportType(type: v1.TelegramReportType): TelegramReportType {
-  return type === 'daily' ? TelegramReportType.DAILY : TelegramReportType.WEEKLY;
+  switch (type) {
+    case 'daily':
+      return TelegramReportType.DAILY;
+    case 'weekly':
+      return TelegramReportType.WEEKLY;
+    case 'weekly_statistics':
+      return TelegramReportType.WEEKLY_STATISTICS;
+  }
 }
 
 function toReportDto(report: {

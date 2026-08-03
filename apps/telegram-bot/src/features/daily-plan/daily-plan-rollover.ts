@@ -10,6 +10,8 @@ import {
 } from '../../core/time/kyiv-calendar.js';
 import { renderDailyPlanSummary } from './daily-plan-summary.js';
 import { buildPlanKeyboard, renderPlan, setActiveDailyPlanPanel } from './plan.command.js';
+import { deliverWeeklyStatistics } from '../statistics/weekly-statistics-delivery.js';
+import { latestCompletedWeekStart } from '../statistics/weekly-statistics.js';
 
 const retryDelayMs = 60_000;
 const batchSize = 10;
@@ -43,9 +45,11 @@ export function startDailyPlanRollover(
     try {
       const result = await processCurrentRollover(telegramApi, apiClient);
 
-      if (result.claimCount === batchSize) {
+      if (result.hadFailure) {
+        nextDelay = retryDelayMs;
+      } else if (result.claimCount === batchSize) {
         nextDelay = 0;
-      } else if (result.hadFailure || isKyivMidnightWindow()) {
+      } else if (isKyivMidnightWindow()) {
         nextDelay = retryDelayMs;
       }
     } catch (error) {
@@ -74,7 +78,7 @@ export function startDailyPlanRollover(
   };
 }
 
-async function processCurrentRollover(
+export async function processCurrentRollover(
   telegramApi: TelegramApi,
   apiClient: AionApiClient,
 ): Promise<RolloverRunResult> {
@@ -86,6 +90,15 @@ async function processCurrentRollover(
   for (const claim of claims) {
     const delivered = await deliverRollover(telegramApi, apiClient, claim);
     hadFailure ||= !delivered;
+  }
+
+  if (claims.length < batchSize && !hadFailure) {
+    const statisticsDelivered = await deliverWeeklyStatistics(
+      telegramApi,
+      apiClient,
+      latestCompletedWeekStart(targetDate),
+    );
+    hadFailure ||= !statisticsDelivered;
   }
 
   return {
