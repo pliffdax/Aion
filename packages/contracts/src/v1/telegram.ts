@@ -204,9 +204,12 @@ export const UpdateTelegramReportProfileDtoSchema = z
   );
 export type UpdateTelegramReportProfileDto = z.infer<typeof UpdateTelegramReportProfileDtoSchema>;
 
+const TelegramDailyPlanItemDescriptionSchema = z.string().trim().min(1).max(2000);
+
 export const TelegramDailyPlanItemDtoSchema = z.object({
   id: CuidSchema,
   text: z.string().min(1).max(160),
+  description: TelegramDailyPlanItemDescriptionSchema.nullable().default(null),
   completed: z.boolean(),
   position: z.number().int().min(0),
 });
@@ -228,6 +231,7 @@ export type GetOrCreateTelegramDailyPlanDto = z.infer<typeof GetOrCreateTelegram
 
 export const AddTelegramDailyPlanItemDtoSchema = GetOrCreateTelegramDailyPlanDtoSchema.extend({
   text: z.string().trim().min(1).max(160),
+  description: TelegramDailyPlanItemDescriptionSchema.optional(),
 });
 export type AddTelegramDailyPlanItemDto = z.infer<typeof AddTelegramDailyPlanItemDtoSchema>;
 
@@ -237,11 +241,15 @@ export const UpdateTelegramDailyPlanItemDtoSchema = z
     date: TelegramPlanDateSchema,
     itemId: CuidSchema,
     text: z.string().trim().min(1).max(160).optional(),
+    description: TelegramDailyPlanItemDescriptionSchema.nullable().optional(),
     completed: z.boolean().optional(),
   })
-  .refine(dto => dto.text !== undefined || dto.completed !== undefined, {
-    message: 'At least one item field must be provided',
-  });
+  .refine(
+    dto => dto.text !== undefined || dto.description !== undefined || dto.completed !== undefined,
+    {
+      message: 'At least one item field must be provided',
+    },
+  );
 export type UpdateTelegramDailyPlanItemDto = z.infer<typeof UpdateTelegramDailyPlanItemDtoSchema>;
 
 export const ToggleTelegramDailyPlanItemDtoSchema = z.object({

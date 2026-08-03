@@ -125,6 +125,7 @@ export class TelegramService {
         data: {
           dailyPlanId: dailyPlan.id,
           text: dto.text,
+          ...(dto.description !== undefined ? { description: dto.description } : {}),
           position: (aggregate._max.position ?? -1) + 1,
         },
       });
@@ -140,6 +141,7 @@ export class TelegramService {
   ): Promise<v1.TelegramDailyPlanDto> {
     return this.updateOwnedDailyPlanItem(dto, () => ({
       ...(dto.text !== undefined ? { text: dto.text } : {}),
+      ...(dto.description !== undefined ? { description: dto.description } : {}),
       ...(dto.completed !== undefined ? { completed: dto.completed } : {}),
     }));
   }
@@ -156,6 +158,7 @@ export class TelegramService {
     dto: v1.ToggleTelegramDailyPlanItemDto,
     getData: (item: { completed: boolean }) => {
       text?: string;
+      description?: string | null;
       completed?: boolean;
     },
   ): Promise<v1.TelegramDailyPlanDto> {
@@ -616,6 +619,7 @@ function toDailyPlanDto(plan: DailyPlanRecord): v1.TelegramDailyPlanDto {
     items: plan.items.map(item => ({
       id: item.id,
       text: item.text,
+      description: item.description,
       completed: item.completed,
       position: item.position,
     })),
