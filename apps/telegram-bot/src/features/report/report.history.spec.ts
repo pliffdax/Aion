@@ -33,6 +33,7 @@ test('report menu and history keyboards provide complete forward and back naviga
   assert.ok(historyCallbacks.includes('report:history:previous'));
   assert.ok(historyCallbacks.includes('report:history:next'));
   assert.ok(historyCallbacks.includes('report:history:menu'));
+  assert.ok(historyCallbacks.includes('report:history:filter:weekly_statistics'));
   assert.deepEqual(callbacks(buildReportHistoryItemKeyboard('ru')), [
     'report:history:list',
     'report:setup:cancel',
@@ -42,6 +43,7 @@ test('report menu and history keyboards provide complete forward and back naviga
 test('history makes the migration boundary and selected filter explicit', () => {
   assert.match(renderReportHistory('ru', 'daily', [dailyReport]), /Фильтр: <b>Дневной<\/b>/);
   assert.match(renderReportHistory('ru', null, []), /только с момента обновления/);
+  assert.match(renderReportHistory('ru', 'weekly_statistics', []), /Статистика/);
 });
 
 test('report history contracts validate exact periods, pagination, and claim outcomes', () => {
@@ -64,6 +66,16 @@ test('report history contracts validate exact periods, pagination, and claim out
       text: 'Report',
     }).success,
     false,
+  );
+  assert.equal(
+    v1.ClaimTelegramReportDeliveryDtoSchema.safeParse({
+      telegramUserId: '123',
+      type: 'weekly_statistics',
+      periodStart: '2026-08-03',
+      periodEnd: '2026-08-09',
+      text: 'Statistics',
+    }).success,
+    true,
   );
   assert.equal(
     v1.ClaimedTelegramReportDeliveryDtoSchema.safeParse({

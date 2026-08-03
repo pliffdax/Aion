@@ -181,6 +181,31 @@ export class AionApiClient {
     );
   }
 
+  getWeeklyPlanStatistics(
+    telegramUserId: number,
+    periodStart: string,
+  ): Promise<v1.TelegramWeeklyPlanStatisticsDto> {
+    return this.request(
+      '/telegram/daily-plans/statistics/weekly',
+      v1.TelegramWeeklyPlanStatisticsDtoSchema,
+      'POST',
+      { telegramUserId: String(telegramUserId), periodStart },
+    );
+  }
+
+  listWeeklyPlanStatisticsCandidates(
+    periodStart: string,
+    cursor: string | null = null,
+    limit = 10,
+  ): Promise<v1.TelegramWeeklyPlanStatisticsCandidatePageDto> {
+    return this.request(
+      '/telegram/daily-plans/statistics/weekly/candidates',
+      v1.TelegramWeeklyPlanStatisticsCandidatePageDtoSchema,
+      'POST',
+      { periodStart, cursor, limit },
+    );
+  }
+
   createReminder(
     telegramUserId: number,
     chatId: number,

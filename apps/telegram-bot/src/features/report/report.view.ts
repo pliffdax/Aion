@@ -45,11 +45,11 @@ export function buildReportMenuKeyboard(locale: Locale): InlineKeyboard {
 
 export function renderReportHistory(
   locale: Locale,
-  type: ReportType | null,
+  type: v1.TelegramReportType | null,
   reports: v1.TelegramReportDto[],
 ): string {
   const filter = type
-    ? translate(locale, type === 'daily' ? 'report.daily' : 'report.weekly')
+    ? reportHistoryTypeLabel(locale, type)
     : translate(locale, 'report.historyAll');
   const hint = reports.length > 0 ? 'report.historyHint' : 'report.historyEmpty';
 
@@ -65,7 +65,7 @@ export function renderReportHistory(
 export function buildReportHistoryKeyboard(
   locale: Locale,
   reports: v1.TelegramReportDto[],
-  options: { type: ReportType | null; hasPrevious: boolean; hasNext: boolean },
+  options: { type: v1.TelegramReportType | null; hasPrevious: boolean; hasNext: boolean },
 ): InlineKeyboard {
   const keyboard = new InlineKeyboard()
     .text(
@@ -79,6 +79,11 @@ export function buildReportHistoryKeyboard(
     .text(
       `${options.type === 'weekly' ? '✅ ' : ''}${translate(locale, 'report.historyWeekly')}`,
       'report:history:filter:weekly',
+    )
+    .row()
+    .text(
+      `${options.type === 'weekly_statistics' ? '✅ ' : ''}${translate(locale, 'report.historyStatistics')}`,
+      'report:history:filter:weekly_statistics',
     )
     .row();
 
@@ -106,7 +111,14 @@ export function buildReportHistoryItemKeyboard(locale: Locale): InlineKeyboard {
 
 function reportHistoryLabel(report: v1.TelegramReportDto): string {
   if (report.type === 'daily') return `☀️ ${formatDate(report.periodStart)}`;
-  return `📊 ${formatDate(report.periodStart)} — ${formatDate(report.periodEnd)}`;
+  const icon = report.type === 'weekly_statistics' ? '📈' : '📊';
+  return `${icon} ${formatDate(report.periodStart)} — ${formatDate(report.periodEnd)}`;
+}
+
+function reportHistoryTypeLabel(locale: Locale, type: v1.TelegramReportType): string {
+  if (type === 'daily') return translate(locale, 'report.daily');
+  if (type === 'weekly') return translate(locale, 'report.weekly');
+  return translate(locale, 'report.historyStatistics');
 }
 
 export function renderReportSettings(locale: Locale): string {

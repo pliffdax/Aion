@@ -204,7 +204,7 @@ export const UpdateTelegramReportProfileDtoSchema = z
   );
 export type UpdateTelegramReportProfileDto = z.infer<typeof UpdateTelegramReportProfileDtoSchema>;
 
-export const TelegramReportTypeSchema = z.enum(['daily', 'weekly']);
+export const TelegramReportTypeSchema = z.enum(['daily', 'weekly', 'weekly_statistics']);
 export type TelegramReportType = z.infer<typeof TelegramReportTypeSchema>;
 
 const TelegramReportTextSchema = z.string().min(1).max(4096);
@@ -311,6 +311,7 @@ export const TelegramDailyPlanItemDtoSchema = z.object({
   description: TelegramDailyPlanItemDescriptionSchema.nullable().default(null),
   completed: z.boolean(),
   completedAt: z.string().datetime({ offset: true }).nullable().default(null),
+  carryCount: z.number().int().min(0).default(0),
   position: z.number().int().min(0),
 });
 export type TelegramDailyPlanItemDto = z.infer<typeof TelegramDailyPlanItemDtoSchema>;
@@ -322,6 +323,54 @@ export const TelegramDailyPlanDtoSchema = z.object({
   items: z.array(TelegramDailyPlanItemDtoSchema),
 });
 export type TelegramDailyPlanDto = z.infer<typeof TelegramDailyPlanDtoSchema>;
+
+export const TelegramWeeklyPlanStatisticItemDtoSchema = z.object({
+  text: z.string().min(1).max(160),
+  carryCount: z.number().int().min(1),
+  completed: z.boolean(),
+});
+export type TelegramWeeklyPlanStatisticItemDto = z.infer<
+  typeof TelegramWeeklyPlanStatisticItemDtoSchema
+>;
+
+export const TelegramWeeklyPlanStatisticsDtoSchema = z.object({
+  telegramUserId: TelegramUserIdSchema,
+  locale: TelegramLocaleSchema,
+  periodStart: TelegramPlanDateSchema,
+  periodEnd: TelegramPlanDateSchema,
+  taskCount: z.number().int().min(0),
+  completedCount: z.number().int().min(0),
+  unfinishedCount: z.number().int().min(0),
+  carryEventCount: z.number().int().min(0),
+  completionRate: z.number().int().min(0).max(100),
+  mostCarriedItems: z.array(TelegramWeeklyPlanStatisticItemDtoSchema).max(5),
+});
+export type TelegramWeeklyPlanStatisticsDto = z.infer<typeof TelegramWeeklyPlanStatisticsDtoSchema>;
+
+export const GetTelegramWeeklyPlanStatisticsDtoSchema = z.object({
+  telegramUserId: TelegramUserIdSchema,
+  periodStart: TelegramPlanDateSchema,
+});
+export type GetTelegramWeeklyPlanStatisticsDto = z.infer<
+  typeof GetTelegramWeeklyPlanStatisticsDtoSchema
+>;
+
+export const ListTelegramWeeklyPlanStatisticsCandidatesDtoSchema = z.object({
+  periodStart: TelegramPlanDateSchema,
+  cursor: CuidSchema.nullable().optional(),
+  limit: z.number().int().min(1).max(50).default(10),
+});
+export type ListTelegramWeeklyPlanStatisticsCandidatesDto = z.infer<
+  typeof ListTelegramWeeklyPlanStatisticsCandidatesDtoSchema
+>;
+
+export const TelegramWeeklyPlanStatisticsCandidatePageDtoSchema = z.object({
+  items: z.array(TelegramWeeklyPlanStatisticsDtoSchema),
+  nextCursor: CuidSchema.nullable(),
+});
+export type TelegramWeeklyPlanStatisticsCandidatePageDto = z.infer<
+  typeof TelegramWeeklyPlanStatisticsCandidatePageDtoSchema
+>;
 
 export const GetOrCreateTelegramDailyPlanDtoSchema = z.object({
   telegramUserId: TelegramUserIdSchema,

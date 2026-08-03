@@ -4,6 +4,7 @@ import { ApiKeyGuard } from '@/common/api-key.guard';
 import { parseBody } from '@/common/zod';
 import { TelegramDailyPlanRolloverService } from './telegram-daily-plan-rollover.service';
 import { TelegramService } from './telegram.service';
+import { TelegramWeeklyStatisticsService } from './telegram-weekly-statistics.service';
 
 @UseGuards(ApiKeyGuard)
 @Controller('v1/telegram')
@@ -11,6 +12,7 @@ export class TelegramController {
   constructor(
     private readonly telegram: TelegramService,
     private readonly dailyPlanRollover: TelegramDailyPlanRolloverService,
+    private readonly weeklyStatistics: TelegramWeeklyStatisticsService,
   ) {}
 
   @Put('users')
@@ -60,6 +62,18 @@ export class TelegramController {
   getReportHistoryItem(@Body() body: unknown) {
     return this.telegram.getReportHistoryItem(
       parseBody(v1.GetTelegramReportHistoryItemDtoSchema, body),
+    );
+  }
+
+  @Post('daily-plans/statistics/weekly')
+  getWeeklyPlanStatistics(@Body() body: unknown) {
+    return this.weeklyStatistics.get(parseBody(v1.GetTelegramWeeklyPlanStatisticsDtoSchema, body));
+  }
+
+  @Post('daily-plans/statistics/weekly/candidates')
+  listWeeklyPlanStatisticsCandidates(@Body() body: unknown) {
+    return this.weeklyStatistics.listCandidates(
+      parseBody(v1.ListTelegramWeeklyPlanStatisticsCandidatesDtoSchema, body),
     );
   }
 

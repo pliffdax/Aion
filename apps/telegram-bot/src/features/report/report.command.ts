@@ -111,7 +111,7 @@ interface ReportSetupSession {
   savedWeeklySections: ReportField[];
   configuringType: ReportType | null;
   editingFieldId: string | null;
-  historyType: ReportType | null;
+  historyType: v1.TelegramReportType | null;
   historyCursorStack: (string | null)[];
   historyPage: v1.TelegramReportHistoryPageDto | null;
 }
@@ -276,15 +276,19 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
     await showReportHistory(context.api, setup, apiClient);
   });
 
-  bot.callbackQuery(/^report:history:filter:(all|daily|weekly)$/, async context => {
-    const setup = await activeSetupSession(context);
-    if (!setup || setup.step !== 'report-history-list') return;
+  bot.callbackQuery(
+    /^report:history:filter:(all|daily|weekly|weekly_statistics)$/,
+    async context => {
+      const setup = await activeSetupSession(context);
+      if (!setup || setup.step !== 'report-history-list') return;
 
-    setup.historyType = context.match[1] === 'all' ? null : (context.match[1] as ReportType);
-    setup.historyCursorStack = [null];
-    await context.answerCallbackQuery();
-    await showReportHistory(context.api, setup, apiClient);
-  });
+      setup.historyType =
+        context.match[1] === 'all' ? null : (context.match[1] as v1.TelegramReportType);
+      setup.historyCursorStack = [null];
+      await context.answerCallbackQuery();
+      await showReportHistory(context.api, setup, apiClient);
+    },
+  );
 
   bot.callbackQuery('report:history:next', async context => {
     const setup = await activeSetupSession(context);
