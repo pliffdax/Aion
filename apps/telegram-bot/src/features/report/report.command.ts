@@ -1,4 +1,5 @@
 import { Bot, InlineKeyboard, type Api as TelegramApi } from 'grammy';
+import type { v1 } from '@aion/contracts';
 import type { AionApiClient } from '../../core/api/aion-api-client.js';
 import type { Command } from '../../core/commands/command.js';
 import { getLocale, translate, type Locale } from '../../core/i18n/i18n.js';
@@ -15,6 +16,7 @@ import {
 } from '../../core/interactions/text-input-owner.js';
 import {
   calculateReportCalendar,
+  calculateReportPeriod,
   formatDailyReport,
   formatWeeklyReport,
   type ReportItem,
@@ -39,6 +41,7 @@ import {
   retreatReportStep,
   setReportType,
   setCurrentText,
+  shouldKeepReportCollector,
   type ReportField,
   type ReportFieldInputType,
   type ReportListStyle,
@@ -47,6 +50,8 @@ import {
 } from './report.session.js';
 import {
   buildReportMenuKeyboard,
+  buildReportHistoryItemKeyboard,
+  buildReportHistoryKeyboard,
   buildReportFieldEditorKeyboard,
   buildReportFieldTextInputKeyboard,
   buildReportSectionConfigurationKeyboard,
@@ -57,6 +62,7 @@ import {
   buildReportStartDateKeyboard,
   buildTypeKeyboard,
   renderReportMenu,
+  renderReportHistory,
   renderReportFieldEditor,
   renderReportSectionConfiguration,
   renderReportSettings,
@@ -77,6 +83,8 @@ type ItemAction = 'status' | 'edit' | 'delete';
 
 type ReportSetupStep =
   | 'report-menu'
+  | 'report-history-list'
+  | 'report-history-item'
   | 'settings-menu'
   | 'author-name'
   | 'date-choice'
@@ -103,10 +111,14 @@ interface ReportSetupSession {
   savedWeeklySections: ReportField[];
   configuringType: ReportType | null;
   editingFieldId: string | null;
+  historyType: ReportType | null;
+  historyCursorStack: (string | null)[];
+  historyPage: v1.TelegramReportHistoryPageDto | null;
 }
 
 const sessionsByUserId = new Map<number, ReportSession>();
 const setupSessionsByUserId = new Map<number, ReportSetupSession>();
+const finishingReportUserIds = new Set<number>();
 let registeredApiClient: AionApiClient | null = null;
 
 export const command: Command = {
@@ -147,6 +159,9 @@ export const command: Command = {
       savedWeeklySections: profile.reportWeeklySections.map(copyReportField),
       configuringType: null,
       editingFieldId: null,
+      historyType: null,
+      historyCursorStack: [null],
+      historyPage: null,
     };
 
     if (!profile.reportAuthorName) {
@@ -249,6 +264,81 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
 
     await context.answerCallbackQuery();
     await showReportSettings(context.api, setup);
+  });
+
+  bot.callbackQuery('report:menu:history', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'report-menu') return;
+
+    setup.historyType = null;
+    setup.historyCursorStack = [null];
+    await context.answerCallbackQuery();
+    await showReportHistory(context.api, setup, apiClient);
+  });
+
+  bot.callbackQuery(/^report:history:filter:(all|daily|weekly)$/, async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'report-history-list') return;
+
+    setup.historyType = context.match[1] === 'all' ? null : (context.match[1] as ReportType);
+    setup.historyCursorStack = [null];
+    await context.answerCallbackQuery();
+    await showReportHistory(context.api, setup, apiClient);
+  });
+
+  bot.callbackQuery('report:history:next', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'report-history-list' || !setup.historyPage?.nextCursor) return;
+
+    setup.historyCursorStack.push(setup.historyPage.nextCursor);
+    await context.answerCallbackQuery();
+    await showReportHistory(context.api, setup, apiClient);
+  });
+
+  bot.callbackQuery('report:history:previous', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'report-history-list' || setup.historyCursorStack.length <= 1) {
+      return;
+    }
+
+    setup.historyCursorStack.pop();
+    await context.answerCallbackQuery();
+    await showReportHistory(context.api, setup, apiClient);
+  });
+
+  bot.callbackQuery(/^report:history:item:([a-z0-9]+)$/, async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'report-history-list') return;
+
+    const reportId = context.match[1];
+    if (!setup.historyPage?.items.some(report => report.id === reportId)) {
+      await context.answerCallbackQuery(translate(getLocale(setup.userId), 'report.stale'));
+      return;
+    }
+
+    const report = await apiClient.getReportHistoryItem(setup.userId, reportId);
+    setup.step = 'report-history-item';
+    await context.answerCallbackQuery();
+    await context.editMessageText(report.text, {
+      parse_mode: 'HTML',
+      reply_markup: buildReportHistoryItemKeyboard(getLocale(setup.userId)),
+    });
+  });
+
+  bot.callbackQuery('report:history:list', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'report-history-item') return;
+
+    await context.answerCallbackQuery();
+    await showReportHistory(context.api, setup, apiClient);
+  });
+
+  bot.callbackQuery('report:history:menu', async context => {
+    const setup = await activeSetupSession(context);
+    if (!setup || setup.step !== 'report-history-list') return;
+
+    await context.answerCallbackQuery();
+    await showReportMenu(context.api, setup);
   });
 
   bot.callbackQuery('report:settings:author', async context => {
@@ -586,6 +676,9 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
       savedWeeklySections: session.configuration.weeklySections.map(copyReportField),
       configuringType: null,
       editingFieldId: null,
+      historyType: null,
+      historyCursorStack: [null],
+      historyPage: null,
     };
     sessionsByUserId.delete(session.userId);
     setupSessionsByUserId.set(session.userId, setup);
@@ -1210,6 +1303,37 @@ async function showReportMenu(telegramApi: TelegramApi, setup: ReportSetupSessio
   );
 }
 
+async function showReportHistory(
+  telegramApi: TelegramApi,
+  setup: ReportSetupSession,
+  apiClient: AionApiClient,
+): Promise<void> {
+  const cursor = setup.historyCursorStack.at(-1) ?? null;
+  const page = await apiClient.listReportHistory(setup.userId, {
+    limit: 8,
+    ...(setup.historyType ? { type: setup.historyType } : {}),
+    ...(cursor ? { cursor } : {}),
+  });
+  setup.step = 'report-history-list';
+  setup.historyPage = page;
+  releaseTextInput(setup.userId, 'report');
+  const locale = getLocale(setup.userId);
+
+  await telegramApi.editMessageText(
+    setup.collector.chatId,
+    setup.collector.messageId,
+    renderReportHistory(locale, setup.historyType, page.items),
+    {
+      parse_mode: 'HTML',
+      reply_markup: buildReportHistoryKeyboard(locale, page.items, {
+        type: setup.historyType,
+        hasPrevious: setup.historyCursorStack.length > 1,
+        hasNext: page.nextCursor !== null,
+      }),
+    },
+  );
+}
+
 async function showReportSettings(
   telegramApi: TelegramApi,
   setup: ReportSetupSession,
@@ -1278,6 +1402,8 @@ async function refreshCollector(telegramApi: TelegramApi, session: ReportSession
 
 async function finishReport(telegramApi: TelegramApi, session: ReportSession): Promise<void> {
   if (!session.type) throw new Error('A report type is required to finish a report');
+  if (finishingReportUserIds.has(session.userId)) return;
+  finishingReportUserIds.add(session.userId);
   const answers = currentTypeAnswers(session);
   const report =
     session.type === 'daily'
@@ -1293,16 +1419,53 @@ async function finishReport(telegramApi: TelegramApi, session: ReportSession): P
           session.authorTag,
           session.configuration.weeklySections,
         );
+  const apiClient = requireApiClient();
+  const period = calculateReportPeriod(session.type, session.calendar, session.startDate);
 
-  await telegramApi.sendMessage(session.collector.chatId, report, {
-    parse_mode: 'HTML',
-  });
+  try {
+    const claim = await apiClient.claimReportDelivery(session.userId, {
+      type: session.type,
+      ...period,
+      text: report,
+    });
 
-  sessionsByUserId.delete(session.userId);
-  releaseTextInput(session.userId, 'report');
-  await telegramApi
-    .deleteMessage(session.collector.chatId, session.collector.messageId)
-    .catch(() => undefined);
+    if (shouldKeepReportCollector(claim.outcome)) {
+      await sendTemporaryNotice(
+        telegramApi,
+        session,
+        translate(getLocale(session.userId), 'report.deliveryBusy'),
+      );
+      return;
+    }
+
+    if (claim.outcome === 'claimed') {
+      let sentMessage: Awaited<ReturnType<TelegramApi['sendMessage']>>;
+      try {
+        sentMessage = await telegramApi.sendMessage(session.collector.chatId, report, {
+          parse_mode: 'HTML',
+        });
+      } catch (error) {
+        await apiClient
+          .failReportDelivery(claim.reportId, claim.deliveryToken, reportDeliveryError(error))
+          .catch(() => undefined);
+        throw error;
+      }
+
+      await apiClient.completeReportDelivery(
+        claim.reportId,
+        claim.deliveryToken,
+        sentMessage.message_id,
+      );
+    }
+
+    sessionsByUserId.delete(session.userId);
+    releaseTextInput(session.userId, 'report');
+    await telegramApi
+      .deleteMessage(session.collector.chatId, session.collector.messageId)
+      .catch(() => undefined);
+  } finally {
+    finishingReportUserIds.delete(session.userId);
+  }
 }
 
 async function advanceOrFinishReport(
@@ -1324,6 +1487,10 @@ function currentDateKey(): string {
     month: '2-digit',
     day: '2-digit',
   }).format(new Date());
+}
+
+function reportDeliveryError(error: unknown): string {
+  return error instanceof Error ? error.message.slice(0, 500) : 'Unknown Telegram delivery error';
 }
 
 function requireApiClient(): AionApiClient {

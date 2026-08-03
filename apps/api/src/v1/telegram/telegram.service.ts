@@ -1,9 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { v1 } from '@aion/contracts';
 import {
   Prisma,
   TelegramLocale,
+  TelegramReportDeliveryStatus,
+  TelegramReportType,
   TelegramReminderRepeatType,
   TelegramReminderStatus,
 } from '@/generated/prisma/client';
@@ -14,6 +21,7 @@ const maxDailyPlanItems = 20;
 const maxActiveReminders = 100;
 const reminderClaimLeaseMs = 5 * 60_000;
 const maxReminderDeliveryAttempts = 3;
+const reportClaimLeaseMs = 5 * 60_000;
 const planWithItems = {
   include: {
     user: true,
@@ -32,7 +40,7 @@ type DailyPlanRecord = Prisma.DailyPlanGetPayload<typeof planWithItems>;
 type ReminderRecord = Prisma.TelegramReminderGetPayload<typeof reminderWithUser>;
 type DatabaseClient = Pick<
   Prisma.TransactionClient,
-  'telegramUser' | 'dailyPlan' | 'dailyPlanItem' | 'telegramReminder'
+  'telegramUser' | 'dailyPlan' | 'dailyPlanItem' | 'telegramReminder' | 'telegramReport'
 >;
 
 @Injectable()
@@ -99,6 +107,162 @@ export class TelegramService {
     });
 
     return toTelegramUserDto(user);
+  }
+
+  async claimReportDelivery(
+    dto: v1.ClaimTelegramReportDeliveryDto,
+  ): Promise<v1.ClaimedTelegramReportDeliveryDto> {
+    const periodStart = parseReportDate(dto.periodStart);
+    const periodEnd = parseReportDate(dto.periodEnd);
+    const type = toPrismaReportType(dto.type);
+    const now = new Date();
+    const staleClaimThreshold = new Date(now.getTime() - reportClaimLeaseMs);
+
+    return this.prisma.$transaction(async transaction => {
+      const user = await upsertTelegramUser(transaction, {
+        telegramUserId: dto.telegramUserId,
+      });
+      const report = await transaction.telegramReport.upsert({
+        where: {
+          userId_type_periodStart_periodEnd: {
+            userId: user.id,
+            type,
+            periodStart,
+            periodEnd,
+          },
+        },
+        create: {
+          userId: user.id,
+          type,
+          periodStart,
+          periodEnd,
+          text: dto.text,
+        },
+        update: {},
+      });
+
+      if (report.text !== dto.text) {
+        throw new ConflictException('A different report snapshot already exists for this period');
+      }
+
+      if (report.deliveryStatus === TelegramReportDeliveryStatus.SENT) {
+        return { reportId: report.id, outcome: 'already_sent', deliveryToken: null };
+      }
+
+      const deliveryToken = randomUUID();
+      const claim = await transaction.telegramReport.updateMany({
+        where: {
+          id: report.id,
+          deliveryStatus: { not: TelegramReportDeliveryStatus.SENT },
+          OR: [
+            { deliveryStatus: { not: TelegramReportDeliveryStatus.PROCESSING } },
+            { claimedAt: { lte: staleClaimThreshold } },
+            { claimedAt: null },
+          ],
+        },
+        data: {
+          deliveryStatus: TelegramReportDeliveryStatus.PROCESSING,
+          deliveryToken,
+          claimedAt: now,
+          lastError: null,
+        },
+      });
+
+      return {
+        reportId: report.id,
+        outcome: claim.count === 1 ? 'claimed' : 'busy',
+        deliveryToken: claim.count === 1 ? deliveryToken : null,
+      } as v1.ClaimedTelegramReportDeliveryDto;
+    });
+  }
+
+  async completeReportDelivery(
+    dto: v1.CompleteTelegramReportDeliveryDto,
+  ): Promise<v1.TelegramReportDeliveryResultDto> {
+    const result = await this.prisma.telegramReport.updateMany({
+      where: {
+        id: dto.reportId,
+        deliveryToken: dto.deliveryToken,
+        deliveryStatus: TelegramReportDeliveryStatus.PROCESSING,
+      },
+      data: {
+        deliveryStatus: TelegramReportDeliveryStatus.SENT,
+        sentAt: new Date(),
+        telegramMessageId: BigInt(dto.telegramMessageId),
+        deliveryToken: null,
+        claimedAt: null,
+        lastError: null,
+      },
+    });
+
+    if (result.count !== 1) throw new NotFoundException('Active report delivery claim not found');
+    return { ok: true };
+  }
+
+  async failReportDelivery(
+    dto: v1.FailTelegramReportDeliveryDto,
+  ): Promise<v1.TelegramReportDeliveryResultDto> {
+    const result = await this.prisma.telegramReport.updateMany({
+      where: {
+        id: dto.reportId,
+        deliveryToken: dto.deliveryToken,
+        deliveryStatus: TelegramReportDeliveryStatus.PROCESSING,
+      },
+      data: {
+        deliveryStatus: TelegramReportDeliveryStatus.FAILED,
+        deliveryToken: null,
+        claimedAt: null,
+        lastError: dto.error,
+      },
+    });
+
+    if (result.count !== 1) throw new NotFoundException('Active report delivery claim not found');
+    return { ok: true };
+  }
+
+  async listReportHistory(
+    dto: v1.ListTelegramReportHistoryDto,
+  ): Promise<v1.TelegramReportHistoryPageDto> {
+    const reports = await this.prisma.telegramReport.findMany({
+      where: {
+        user: { telegramId: BigInt(dto.telegramUserId) },
+        deliveryStatus: TelegramReportDeliveryStatus.SENT,
+        ...(dto.type ? { type: toPrismaReportType(dto.type) } : {}),
+        ...(dto.periodFrom || dto.periodTo
+          ? {
+              periodStart: dto.periodTo ? { lte: parseReportDate(dto.periodTo) } : undefined,
+              periodEnd: dto.periodFrom ? { gte: parseReportDate(dto.periodFrom) } : undefined,
+            }
+          : {}),
+      },
+      orderBy: [{ periodStart: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+      ...(dto.cursor ? { cursor: { id: dto.cursor }, skip: 1 } : {}),
+      take: dto.limit + 1,
+      include: { user: true },
+    });
+    const hasNextPage = reports.length > dto.limit;
+    const items = hasNextPage ? reports.slice(0, dto.limit) : reports;
+
+    return {
+      items: items.map(toReportDto),
+      nextCursor: hasNextPage ? (items.at(-1)?.id ?? null) : null,
+    };
+  }
+
+  async getReportHistoryItem(
+    dto: v1.GetTelegramReportHistoryItemDto,
+  ): Promise<v1.TelegramReportDto> {
+    const report = await this.prisma.telegramReport.findFirst({
+      where: {
+        id: dto.reportId,
+        user: { telegramId: BigInt(dto.telegramUserId) },
+        deliveryStatus: TelegramReportDeliveryStatus.SENT,
+      },
+      include: { user: true },
+    });
+
+    if (!report) throw new NotFoundException('Sent report not found');
+    return toReportDto(report);
   }
 
   async getOrCreateDailyPlan(
@@ -666,6 +830,38 @@ function toPrismaLocale(locale: v1.TelegramLocale): TelegramLocale {
     default:
       return TelegramLocale.RU;
   }
+}
+
+function parseReportDate(value: string): Date {
+  return new Date(`${value}T00:00:00.000Z`);
+}
+
+function toPrismaReportType(type: v1.TelegramReportType): TelegramReportType {
+  return type === 'daily' ? TelegramReportType.DAILY : TelegramReportType.WEEKLY;
+}
+
+function toReportDto(report: {
+  id: string;
+  type: TelegramReportType;
+  periodStart: Date;
+  periodEnd: Date;
+  text: string;
+  createdAt: Date;
+  sentAt: Date | null;
+  user: { telegramId: bigint };
+}): v1.TelegramReportDto {
+  if (!report.sentAt) throw new Error(`Sent report ${report.id} has no sentAt timestamp`);
+
+  return {
+    id: report.id,
+    telegramUserId: report.user.telegramId.toString(),
+    type: report.type.toLowerCase() as v1.TelegramReportType,
+    periodStart: report.periodStart.toISOString().slice(0, 10),
+    periodEnd: report.periodEnd.toISOString().slice(0, 10),
+    text: report.text,
+    createdAt: report.createdAt.toISOString(),
+    sentAt: report.sentAt.toISOString(),
+  };
 }
 
 function toReminderRecurrenceData(

@@ -260,6 +260,37 @@ const translations = {
     '<b>Personal reports</b>\n\nAuthor: <b>{author}</b>\nTracking started: <code>{date}</code>\nCurrent: week <b>{week}</b>, day <b>{day}</b>',
   ],
   'report.start': ['📝 Создать отчёт', '📝 Створити звіт', '📝 Create report'],
+  'report.history': ['🗂 История отчётов', '🗂 Історія звітів', '🗂 Report history'],
+  'report.historyTitle': [
+    '<b>История отчётов</b>',
+    '<b>Історія звітів</b>',
+    '<b>Report history</b>',
+  ],
+  'report.historyFilter': [
+    'Фильтр: <b>{type}</b>',
+    'Фільтр: <b>{type}</b>',
+    'Filter: <b>{type}</b>',
+  ],
+  'report.historyHint': [
+    'Выберите дату или неделю.',
+    'Оберіть дату або тиждень.',
+    'Choose a date or week.',
+  ],
+  'report.historyEmpty': [
+    'Сохранённых отчётов пока нет. История ведётся только с момента обновления.',
+    'Збережених звітів поки немає. Історія ведеться лише з моменту оновлення.',
+    'There are no saved reports yet. History starts from this update.',
+  ],
+  'report.historyAll': ['Все', 'Усі', 'All'],
+  'report.historyDaily': ['Дни', 'Дні', 'Days'],
+  'report.historyWeekly': ['Недели', 'Тижні', 'Weeks'],
+  'report.historyPrevious': ['⬅️ Новее', '⬅️ Новіші', '⬅️ Newer'],
+  'report.historyNext': ['Раньше ➡️', 'Раніші ➡️', 'Older ➡️'],
+  'report.deliveryBusy': [
+    'Отчёт уже отправляется. Подождите немного и попробуйте ещё раз.',
+    'Звіт уже надсилається. Зачекайте трохи й спробуйте ще раз.',
+    'This report is already being sent. Wait a moment and try again.',
+  ],
   'report.settings': ['⚙️ Настройки', '⚙️ Налаштування', '⚙️ Settings'],
   'report.settingsTitle': [
     '<b>Настройки отчётов</b>\n\nЧто хотите изменить?',

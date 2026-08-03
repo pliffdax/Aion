@@ -24,6 +24,11 @@ export interface ReportCalendar {
   day: number;
 }
 
+export interface ReportPeriod {
+  periodStart: string;
+  periodEnd: string;
+}
+
 export function calculateReportCalendar(date: string, startDate: string): ReportCalendar {
   const elapsedDays = Math.floor(
     (Date.parse(`${date}T00:00:00.000Z`) - Date.parse(`${startDate}T00:00:00.000Z`)) /
@@ -38,6 +43,26 @@ export function calculateReportCalendar(date: string, startDate: string): Report
     date,
     week: Math.floor(elapsedDays / 7) + 1,
     day: (elapsedDays % 7) + 1,
+  };
+}
+
+export function calculateReportPeriod(
+  type: 'daily' | 'weekly',
+  calendar: ReportCalendar,
+  startDate: string,
+): ReportPeriod {
+  if (type === 'daily') {
+    return { periodStart: calendar.date, periodEnd: calendar.date };
+  }
+
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  start.setUTCDate(start.getUTCDate() + (calendar.week - 1) * 7);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 6);
+
+  return {
+    periodStart: start.toISOString().slice(0, 10),
+    periodEnd: end.toISOString().slice(0, 10),
   };
 }
 

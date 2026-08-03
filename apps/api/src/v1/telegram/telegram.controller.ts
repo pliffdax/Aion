@@ -30,6 +30,39 @@ export class TelegramController {
     );
   }
 
+  @Post('reports/delivery/claim')
+  claimReportDelivery(@Body() body: unknown) {
+    return this.telegram.claimReportDelivery(
+      parseBody(v1.ClaimTelegramReportDeliveryDtoSchema, body),
+    );
+  }
+
+  @Post('reports/delivery/complete')
+  completeReportDelivery(@Body() body: unknown) {
+    return this.telegram.completeReportDelivery(
+      parseBody(v1.CompleteTelegramReportDeliveryDtoSchema, body),
+    );
+  }
+
+  @Post('reports/delivery/fail')
+  failReportDelivery(@Body() body: unknown) {
+    return this.telegram.failReportDelivery(
+      parseBody(v1.FailTelegramReportDeliveryDtoSchema, body),
+    );
+  }
+
+  @Post('reports/history')
+  listReportHistory(@Body() body: unknown) {
+    return this.telegram.listReportHistory(parseBody(v1.ListTelegramReportHistoryDtoSchema, body));
+  }
+
+  @Post('reports/history/item')
+  getReportHistoryItem(@Body() body: unknown) {
+    return this.telegram.getReportHistoryItem(
+      parseBody(v1.GetTelegramReportHistoryItemDtoSchema, body),
+    );
+  }
+
   @Put('daily-plans')
   getOrCreateDailyPlan(@Body() body: unknown) {
     return this.telegram.getOrCreateDailyPlan(
