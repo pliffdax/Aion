@@ -196,6 +196,12 @@ export function draftCharacterCount(session: ReportSession): number {
     );
 }
 
+export function shouldKeepReportCollector(
+  outcome: v1.ClaimedTelegramReportDeliveryDto['outcome'],
+): boolean {
+  return outcome === 'busy';
+}
+
 function createAnswers(fields: ReportField[]): Record<string, ReportFieldAnswer> {
   return Object.fromEntries(fields.map(field => [field.id, createAnswer()]));
 }

@@ -7,6 +7,7 @@ import {
   reportStepPosition,
   retreatReportStep,
   setReportType,
+  shouldKeepReportCollector,
 } from './report.session.js';
 
 test('walks only through enabled sections in their configured order', () => {
@@ -44,6 +45,12 @@ test('walks only through enabled sections in their configured order', () => {
   retreatReportStep(session);
   assert.equal(currentField(session), null);
   assert.equal(session.type, null);
+});
+
+test('keeps the collector only while another report delivery claim is active', () => {
+  assert.equal(shouldKeepReportCollector('busy'), true);
+  assert.equal(shouldKeepReportCollector('claimed'), false);
+  assert.equal(shouldKeepReportCollector('already_sent'), false);
 });
 
 function field(

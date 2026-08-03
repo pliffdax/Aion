@@ -45,6 +45,63 @@ export class AionApiClient {
     });
   }
 
+  claimReportDelivery(
+    telegramUserId: number,
+    report: Omit<v1.ClaimTelegramReportDeliveryDto, 'telegramUserId'>,
+  ): Promise<v1.ClaimedTelegramReportDeliveryDto> {
+    return this.request(
+      '/telegram/reports/delivery/claim',
+      v1.ClaimedTelegramReportDeliveryDtoSchema,
+      'POST',
+      { telegramUserId: String(telegramUserId), ...report },
+    );
+  }
+
+  completeReportDelivery(
+    reportId: string,
+    deliveryToken: string,
+    telegramMessageId: number,
+  ): Promise<v1.TelegramReportDeliveryResultDto> {
+    return this.request(
+      '/telegram/reports/delivery/complete',
+      v1.TelegramReportDeliveryResultDtoSchema,
+      'POST',
+      { reportId, deliveryToken, telegramMessageId: String(telegramMessageId) },
+    );
+  }
+
+  failReportDelivery(
+    reportId: string,
+    deliveryToken: string,
+    error: string,
+  ): Promise<v1.TelegramReportDeliveryResultDto> {
+    return this.request(
+      '/telegram/reports/delivery/fail',
+      v1.TelegramReportDeliveryResultDtoSchema,
+      'POST',
+      { reportId, deliveryToken, error },
+    );
+  }
+
+  listReportHistory(
+    telegramUserId: number,
+    filters: Omit<v1.ListTelegramReportHistoryDto, 'telegramUserId'> = { limit: 10 },
+  ): Promise<v1.TelegramReportHistoryPageDto> {
+    return this.request(
+      '/telegram/reports/history',
+      v1.TelegramReportHistoryPageDtoSchema,
+      'POST',
+      { telegramUserId: String(telegramUserId), ...filters },
+    );
+  }
+
+  getReportHistoryItem(telegramUserId: number, reportId: string): Promise<v1.TelegramReportDto> {
+    return this.request('/telegram/reports/history/item', v1.TelegramReportDtoSchema, 'POST', {
+      telegramUserId: String(telegramUserId),
+      reportId,
+    });
+  }
+
   getOrCreateDailyPlan(telegramUserId: number, date: string): Promise<v1.TelegramDailyPlanDto> {
     return this.request('/telegram/daily-plans', v1.TelegramDailyPlanDtoSchema, 'PUT', {
       telegramUserId: String(telegramUserId),

@@ -36,9 +36,77 @@ export function buildReportMenuKeyboard(locale: Locale): InlineKeyboard {
   return new InlineKeyboard()
     .text(translate(locale, 'report.start'), 'report:menu:start')
     .row()
+    .text(translate(locale, 'report.history'), 'report:menu:history')
+    .row()
     .text(translate(locale, 'report.settings'), 'report:menu:settings')
     .row()
     .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+}
+
+export function renderReportHistory(
+  locale: Locale,
+  type: ReportType | null,
+  reports: v1.TelegramReportDto[],
+): string {
+  const filter = type
+    ? translate(locale, type === 'daily' ? 'report.daily' : 'report.weekly')
+    : translate(locale, 'report.historyAll');
+  const hint = reports.length > 0 ? 'report.historyHint' : 'report.historyEmpty';
+
+  return [
+    translate(locale, 'report.historyTitle'),
+    '',
+    translate(locale, 'report.historyFilter', { type: filter }),
+    '',
+    translate(locale, hint),
+  ].join('\n');
+}
+
+export function buildReportHistoryKeyboard(
+  locale: Locale,
+  reports: v1.TelegramReportDto[],
+  options: { type: ReportType | null; hasPrevious: boolean; hasNext: boolean },
+): InlineKeyboard {
+  const keyboard = new InlineKeyboard()
+    .text(
+      `${options.type === null ? '✅ ' : ''}${translate(locale, 'report.historyAll')}`,
+      'report:history:filter:all',
+    )
+    .text(
+      `${options.type === 'daily' ? '✅ ' : ''}${translate(locale, 'report.historyDaily')}`,
+      'report:history:filter:daily',
+    )
+    .text(
+      `${options.type === 'weekly' ? '✅ ' : ''}${translate(locale, 'report.historyWeekly')}`,
+      'report:history:filter:weekly',
+    )
+    .row();
+
+  for (const report of reports) {
+    keyboard.text(reportHistoryLabel(report), `report:history:item:${report.id}`).row();
+  }
+
+  if (options.hasPrevious) {
+    keyboard.text(translate(locale, 'report.historyPrevious'), 'report:history:previous');
+  }
+  if (options.hasNext) {
+    keyboard.text(translate(locale, 'report.historyNext'), 'report:history:next');
+  }
+  if (options.hasPrevious || options.hasNext) keyboard.row();
+
+  return keyboard.text(translate(locale, 'report.back'), 'report:history:menu');
+}
+
+export function buildReportHistoryItemKeyboard(locale: Locale): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(translate(locale, 'report.back'), 'report:history:list')
+    .row()
+    .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
+}
+
+function reportHistoryLabel(report: v1.TelegramReportDto): string {
+  if (report.type === 'daily') return `☀️ ${formatDate(report.periodStart)}`;
+  return `📊 ${formatDate(report.periodStart)} — ${formatDate(report.periodEnd)}`;
 }
 
 export function renderReportSettings(locale: Locale): string {
