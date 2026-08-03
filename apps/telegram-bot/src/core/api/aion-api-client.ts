@@ -102,6 +102,28 @@ export class AionApiClient {
     });
   }
 
+  findEditableReport(
+    telegramUserId: number,
+    report: Omit<v1.FindEditableTelegramReportDto, 'telegramUserId'>,
+  ): Promise<v1.EditableTelegramReportDto | null> {
+    return this.request(
+      '/telegram/reports/editable/find',
+      v1.NullableEditableTelegramReportDtoSchema,
+      'POST',
+      { telegramUserId: String(telegramUserId), ...report },
+    );
+  }
+
+  replaceReport(
+    telegramUserId: number,
+    report: Omit<v1.ReplaceTelegramReportDto, 'telegramUserId'>,
+  ): Promise<v1.EditableTelegramReportDto> {
+    return this.request('/telegram/reports/editable', v1.EditableTelegramReportDtoSchema, 'PATCH', {
+      telegramUserId: String(telegramUserId),
+      ...report,
+    });
+  }
+
   getOrCreateDailyPlan(telegramUserId: number, date: string): Promise<v1.TelegramDailyPlanDto> {
     return this.request('/telegram/daily-plans', v1.TelegramDailyPlanDtoSchema, 'PUT', {
       telegramUserId: String(telegramUserId),

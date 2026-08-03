@@ -109,6 +109,44 @@ export function buildReportHistoryItemKeyboard(locale: Locale): InlineKeyboard {
     .text(translate(locale, 'report.cancel'), 'report:setup:cancel');
 }
 
+export function renderExistingReportMenu(
+  locale: Locale,
+  report: v1.EditableTelegramReportDto,
+): string {
+  const type = report.type === 'daily' ? 'report.daily' : 'report.weekly';
+  return [
+    translate(locale, 'report.existingTitle'),
+    '',
+    translate(locale, 'report.existingPeriod', {
+      type: translate(locale, type),
+      start: formatDate(report.periodStart),
+      end: formatDate(report.periodEnd),
+    }),
+    '',
+    translate(locale, 'report.existingHint'),
+  ].join('\n');
+}
+
+export function buildExistingReportKeyboard(locale: Locale): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(translate(locale, 'report.existingOpen'), 'report:existing:open')
+    .row()
+    .text(translate(locale, 'report.existingEdit'), 'report:existing:edit')
+    .row()
+    .text(translate(locale, 'report.existingRefill'), 'report:existing:refill')
+    .row()
+    .text(translate(locale, 'report.back'), 'report:existing:type-back')
+    .row()
+    .text(translate(locale, 'report.cancel'), 'report:cancel');
+}
+
+export function buildExistingReportOpenKeyboard(locale: Locale): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(translate(locale, 'report.back'), 'report:existing:back')
+    .row()
+    .text(translate(locale, 'report.cancel'), 'report:cancel');
+}
+
 function reportHistoryLabel(report: v1.TelegramReportDto): string {
   if (report.type === 'daily') return `☀️ ${formatDate(report.periodStart)}`;
   const icon = report.type === 'weekly_statistics' ? '📈' : '📊';

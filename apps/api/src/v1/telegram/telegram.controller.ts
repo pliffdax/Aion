@@ -65,6 +65,18 @@ export class TelegramController {
     );
   }
 
+  @Post('reports/editable/find')
+  findEditableReport(@Body() body: unknown) {
+    return this.telegram.findEditableReport(
+      parseBody(v1.FindEditableTelegramReportDtoSchema, body),
+    );
+  }
+
+  @Patch('reports/editable')
+  replaceReport(@Body() body: unknown) {
+    return this.telegram.replaceReport(parseBody(v1.ReplaceTelegramReportDtoSchema, body));
+  }
+
   @Post('daily-plans/statistics/weekly')
   getWeeklyPlanStatistics(@Body() body: unknown) {
     return this.weeklyStatistics.get(parseBody(v1.GetTelegramWeeklyPlanStatisticsDtoSchema, body));
