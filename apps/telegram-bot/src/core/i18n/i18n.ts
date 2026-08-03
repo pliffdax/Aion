@@ -554,7 +554,24 @@ const translations = {
     'There were no repeated carry-overs this week.',
   ],
   'statistics.previous': ['⬅️ Раньше', '⬅️ Раніше', '⬅️ Earlier'],
+  'statistics.chooseDate': ['📅 Выбрать дату', '📅 Обрати дату', '📅 Choose date'],
   'statistics.next': ['Позже ➡️', 'Пізніше ➡️', 'Later ➡️'],
+  'statistics.datePrompt': [
+    '<b>📅 Выбор недели</b>\n\nВведите любую дату нужной недели в формате <code>ДД.ММ.ГГГГ</code>.\nНапример: <code>{example}</code>',
+    '<b>📅 Вибір тижня</b>\n\nВведіть будь-яку дату потрібного тижня у форматі <code>ДД.ММ.РРРР</code>.\nНаприклад: <code>{example}</code>',
+    '<b>📅 Choose a week</b>\n\nEnter any date from the required week in <code>DD.MM.YYYY</code> format.\nExample: <code>{example}</code>',
+  ],
+  'statistics.invalidDate': [
+    'Такой даты нет. Проверьте формат и попробуйте ещё раз.',
+    'Такої дати немає. Перевірте формат і спробуйте ще раз.',
+    'That date is invalid. Check the format and try again.',
+  ],
+  'statistics.incompleteWeek': [
+    'Эта неделя ещё не завершена. Выберите дату из прошлой недели или раньше.',
+    'Цей тиждень ще не завершено. Оберіть дату з минулого тижня або раніше.',
+    'That week is not complete yet. Choose a date from last week or earlier.',
+  ],
+  'statistics.cancelDate': ['⬅️ Назад', '⬅️ Назад', '⬅️ Back'],
   'reminder.menuTitle': ['Напоминания', 'Нагадування', 'Reminders'],
   'reminder.menuHint': [
     'Активных напоминаний: {count}.',

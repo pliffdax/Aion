@@ -1,4 +1,4 @@
-type TextInputOwner = 'daily-plan' | 'report' | 'reminder';
+type TextInputOwner = 'daily-plan' | 'report' | 'reminder' | 'statistics';
 
 const ownersByUserId = new Map<number, TextInputOwner>();
 
