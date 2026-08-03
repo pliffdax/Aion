@@ -8,7 +8,7 @@ const pendingUserRequests = new Set<number>();
 export const command: Command = {
   name: 'whoami',
   descriptionKey: 'command.whoami.description',
-  access: 'user',
+  access: 'owner',
   async handle(context) {
     const locale = getLocale(context.from?.id);
 
@@ -20,9 +20,15 @@ export const command: Command = {
   },
 };
 
-export function registerWhoamiHandlers(bot: Bot): void {
+export function registerWhoamiHandlers(bot: Bot, ownerId: number): void {
   bot.callbackQuery('whoami:self', async context => {
     const locale = getLocale(context.from.id);
+
+    if (context.from.id !== ownerId) {
+      await context.answerCallbackQuery(translate(locale, 'access.ownerOnly'));
+      return;
+    }
+
     await context.answerCallbackQuery();
     await context.editMessageText(
       `${translate(locale, 'whoami.currentUserId')}\n<code>${context.from.id}</code>`,
@@ -35,6 +41,11 @@ export function registerWhoamiHandlers(bot: Bot): void {
   bot.callbackQuery('whoami:other', async context => {
     const locale = getLocale(context.from.id);
     const chatId = context.chat?.id;
+
+    if (context.from.id !== ownerId) {
+      await context.answerCallbackQuery(translate(locale, 'access.ownerOnly'));
+      return;
+    }
 
     if (!chatId) {
       await context.answerCallbackQuery(translate(locale, 'whoami.chatUnavailable'));
@@ -57,6 +68,10 @@ export function registerWhoamiHandlers(bot: Bot): void {
   });
 
   bot.on('message:users_shared', async context => {
+    if (context.from.id !== ownerId) {
+      return;
+    }
+
     if (!pendingUserRequests.delete(context.chat.id)) {
       return;
     }

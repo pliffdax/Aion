@@ -1,7 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { v1 } from '@aion/contracts';
-import { formatDailyReport } from './report.formatter.js';
+import { calculateReportPeriod, formatDailyReport } from './report.formatter.js';
+
+test('derives exact daily and anchored weekly report periods', () => {
+  const calendar = { date: '2026-08-03', week: 3, day: 2 };
+
+  assert.deepEqual(calculateReportPeriod('daily', calendar, '2026-07-19'), {
+    periodStart: '2026-08-03',
+    periodEnd: '2026-08-03',
+  });
+  assert.deepEqual(calculateReportPeriod('weekly', calendar, '2026-07-19'), {
+    periodStart: '2026-08-02',
+    periodEnd: '2026-08-08',
+  });
+});
 
 test('formats configured fields in order using every supported field type', () => {
   const fields: v1.TelegramReportField[] = [

@@ -34,6 +34,8 @@ export interface ReportSession {
   answers: Record<ReportType, Record<string, ReportFieldAnswer>>;
   editingItemId: number | null;
   nextItemId: number;
+  existingReport: v1.EditableTelegramReportDto | null;
+  replaceMode: 'edit' | 'refill' | null;
 }
 
 export function createReportSession(
@@ -66,6 +68,8 @@ export function createReportSession(
     },
     editingItemId: null,
     nextItemId: 1,
+    existingReport: null,
+    replaceMode: null,
   };
 }
 
@@ -77,6 +81,60 @@ export function setReportType(session: ReportSession, type: ReportType): void {
   session.type = type;
   session.fieldIndex = 0;
   session.editingItemId = null;
+  session.existingReport = null;
+  session.replaceMode = null;
+}
+
+export function selectExistingReport(
+  session: ReportSession,
+  type: ReportType,
+  report: v1.EditableTelegramReportDto,
+): void {
+  session.type = type;
+  session.fieldIndex = null;
+  session.editingItemId = null;
+  session.existingReport = report;
+  session.replaceMode = null;
+}
+
+export function clearExistingReportSelection(session: ReportSession): void {
+  session.type = null;
+  session.fieldIndex = null;
+  session.editingItemId = null;
+  session.existingReport = null;
+  session.replaceMode = null;
+}
+
+export function editExistingReport(session: ReportSession): boolean {
+  const report = session.existingReport;
+  if (!report?.answers || !report.configuration || report.type === 'weekly_statistics')
+    return false;
+  const type = report.type;
+
+  if (type === 'daily')
+    session.configuration.dailySections = report.configuration.map(copyReportField);
+  else session.configuration.weeklySections = report.configuration.map(copyReportField);
+  session.answers[type] = copyAnswers(report.answers);
+  session.type = type;
+  session.fieldIndex = 0;
+  session.editingItemId = null;
+  session.nextItemId = nextAnswerItemId(session.answers[type]);
+  session.replaceMode = 'edit';
+  return true;
+}
+
+export function refillExistingReport(session: ReportSession): boolean {
+  const report = session.existingReport;
+  if (!report || report.type === 'weekly_statistics') return false;
+  const type = report.type;
+
+  session.type = type;
+  session.answers[type] = createAnswers(sectionsForType(session, type));
+  session.fieldIndex = 0;
+  session.editingItemId = null;
+  session.nextItemId = 1;
+  session.replaceMode = 'refill';
+  return true;
 }
 
 export function sectionsForType(session: ReportSession, type: ReportType): ReportField[] {
@@ -196,12 +254,32 @@ export function draftCharacterCount(session: ReportSession): number {
     );
 }
 
+export function shouldKeepReportCollector(
+  outcome: v1.ClaimedTelegramReportDeliveryDto['outcome'],
+): boolean {
+  return outcome === 'busy';
+}
+
 function createAnswers(fields: ReportField[]): Record<string, ReportFieldAnswer> {
   return Object.fromEntries(fields.map(field => [field.id, createAnswer()]));
 }
 
 function createAnswer(): ReportFieldAnswer {
   return { text: '', items: [], rating: null, boolean: null };
+}
+
+function copyAnswers(answers: v1.TelegramReportAnswers): Record<string, ReportFieldAnswer> {
+  return Object.fromEntries(
+    Object.entries(answers).map(([fieldId, answer]) => [
+      fieldId,
+      { ...answer, items: answer.items.map(item => ({ ...item })) },
+    ]),
+  );
+}
+
+function nextAnswerItemId(answers: Record<string, ReportFieldAnswer>): number {
+  const ids = Object.values(answers).flatMap(answer => answer.items.map(item => item.id));
+  return Math.max(0, ...ids) + 1;
 }
 
 function sumItemLength(total: number, item: ReportItem): number {

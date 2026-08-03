@@ -219,6 +219,10 @@ async function carryIncompleteItems(
       dailyPlanId: targetPlan.id,
       carriedFromItemId: item.id,
       text: item.text,
+      description: item.description,
+      completed: false,
+      completedAt: null,
+      carryCount: item.carryCount + 1,
       position: maxPosition + index + 1,
     })),
     skipDuplicates: true,
@@ -249,7 +253,10 @@ function toDailyPlanDto(plan: DailyPlanRecord): v1.TelegramDailyPlanDto {
     items: plan.items.map(item => ({
       id: item.id,
       text: item.text,
+      description: item.description,
       completed: item.completed,
+      completedAt: item.completedAt?.toISOString() ?? null,
+      carryCount: item.carryCount,
       position: item.position,
     })),
   };

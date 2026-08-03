@@ -204,10 +204,177 @@ export const UpdateTelegramReportProfileDtoSchema = z
   );
 export type UpdateTelegramReportProfileDto = z.infer<typeof UpdateTelegramReportProfileDtoSchema>;
 
+export const TelegramReportTypeSchema = z.enum(['daily', 'weekly', 'weekly_statistics']);
+export type TelegramReportType = z.infer<typeof TelegramReportTypeSchema>;
+
+const TelegramReportTextSchema = z.string().min(1).max(4096);
+const TelegramReportTimestampSchema = z.string().datetime({ offset: true });
+
+export const TelegramReportAnswerItemSchema = z.object({
+  id: z.number().int().positive(),
+  text: z.string().trim().min(1).max(160),
+  status: z.enum(['pending', 'completed', 'failed']),
+});
+export type TelegramReportAnswerItem = z.infer<typeof TelegramReportAnswerItemSchema>;
+
+export const TelegramReportFieldAnswerSchema = z.object({
+  text: z.string().max(800),
+  items: z.array(TelegramReportAnswerItemSchema).max(20),
+  rating: z.number().int().min(1).max(10).nullable(),
+  boolean: z.boolean().nullable(),
+});
+export type TelegramReportFieldAnswer = z.infer<typeof TelegramReportFieldAnswerSchema>;
+
+export const TelegramReportAnswersSchema = z.record(
+  z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/),
+  TelegramReportFieldAnswerSchema,
+);
+export type TelegramReportAnswers = z.infer<typeof TelegramReportAnswersSchema>;
+
+export const TelegramReportDtoSchema = z.object({
+  id: CuidSchema,
+  telegramUserId: TelegramUserIdSchema,
+  type: TelegramReportTypeSchema,
+  periodStart: TelegramPlanDateSchema,
+  periodEnd: TelegramPlanDateSchema,
+  text: TelegramReportTextSchema,
+  createdAt: TelegramReportTimestampSchema,
+  sentAt: TelegramReportTimestampSchema,
+});
+export type TelegramReportDto = z.infer<typeof TelegramReportDtoSchema>;
+
+export const ClaimTelegramReportDeliveryDtoSchema = z
+  .object({
+    telegramUserId: TelegramUserIdSchema,
+    type: TelegramReportTypeSchema,
+    periodStart: TelegramPlanDateSchema,
+    periodEnd: TelegramPlanDateSchema,
+    text: TelegramReportTextSchema,
+    answers: TelegramReportAnswersSchema.optional(),
+    configuration: TelegramReportSectionsSchema.optional(),
+  })
+  .superRefine((report, context) => {
+    validateTelegramReportPeriod(report, context);
+    if ((report.answers === undefined) !== (report.configuration === undefined)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['answers'],
+        message: 'Report answers and configuration must be provided together',
+      });
+    }
+  });
+export type ClaimTelegramReportDeliveryDto = z.infer<typeof ClaimTelegramReportDeliveryDtoSchema>;
+
+export const ClaimedTelegramReportDeliveryDtoSchema = z.discriminatedUnion('outcome', [
+  z.object({
+    reportId: CuidSchema,
+    outcome: z.literal('claimed'),
+    deliveryToken: z.string().uuid(),
+  }),
+  z.object({
+    reportId: CuidSchema,
+    outcome: z.literal('already_sent'),
+    deliveryToken: z.null(),
+  }),
+  z.object({
+    reportId: CuidSchema,
+    outcome: z.literal('busy'),
+    deliveryToken: z.null(),
+  }),
+]);
+export type ClaimedTelegramReportDeliveryDto = z.infer<
+  typeof ClaimedTelegramReportDeliveryDtoSchema
+>;
+
+export const CompleteTelegramReportDeliveryDtoSchema = z.object({
+  reportId: CuidSchema,
+  deliveryToken: z.string().uuid(),
+  telegramMessageId: TelegramUserIdSchema,
+});
+export type CompleteTelegramReportDeliveryDto = z.infer<
+  typeof CompleteTelegramReportDeliveryDtoSchema
+>;
+
+export const FailTelegramReportDeliveryDtoSchema = z.object({
+  reportId: CuidSchema,
+  deliveryToken: z.string().uuid(),
+  error: z.string().trim().min(1).max(500),
+});
+export type FailTelegramReportDeliveryDto = z.infer<typeof FailTelegramReportDeliveryDtoSchema>;
+
+export const TelegramReportDeliveryResultDtoSchema = z.object({ ok: z.literal(true) });
+export type TelegramReportDeliveryResultDto = z.infer<typeof TelegramReportDeliveryResultDtoSchema>;
+
+export const ListTelegramReportHistoryDtoSchema = z
+  .object({
+    telegramUserId: TelegramUserIdSchema,
+    type: TelegramReportTypeSchema.optional(),
+    periodFrom: TelegramPlanDateSchema.optional(),
+    periodTo: TelegramPlanDateSchema.optional(),
+    cursor: CuidSchema.nullable().optional(),
+    limit: z.number().int().min(1).max(20).default(10),
+  })
+  .refine(
+    value =>
+      !value.periodFrom ||
+      !value.periodTo ||
+      Date.parse(value.periodFrom) <= Date.parse(value.periodTo),
+    { message: 'periodFrom must be on or before periodTo', path: ['periodTo'] },
+  );
+export type ListTelegramReportHistoryDto = z.infer<typeof ListTelegramReportHistoryDtoSchema>;
+
+export const TelegramReportHistoryPageDtoSchema = z.object({
+  items: z.array(TelegramReportDtoSchema),
+  nextCursor: CuidSchema.nullable(),
+});
+export type TelegramReportHistoryPageDto = z.infer<typeof TelegramReportHistoryPageDtoSchema>;
+
+export const GetTelegramReportHistoryItemDtoSchema = z.object({
+  telegramUserId: TelegramUserIdSchema,
+  reportId: CuidSchema,
+});
+export type GetTelegramReportHistoryItemDto = z.infer<typeof GetTelegramReportHistoryItemDtoSchema>;
+
+export const FindEditableTelegramReportDtoSchema = z
+  .object({
+    telegramUserId: TelegramUserIdSchema,
+    type: z.enum(['daily', 'weekly']),
+    periodStart: TelegramPlanDateSchema,
+    periodEnd: TelegramPlanDateSchema,
+  })
+  .superRefine(validateTelegramReportPeriod);
+export type FindEditableTelegramReportDto = z.infer<typeof FindEditableTelegramReportDtoSchema>;
+
+export const EditableTelegramReportDtoSchema = TelegramReportDtoSchema.extend({
+  answers: TelegramReportAnswersSchema.nullable(),
+  configuration: TelegramReportSectionsSchema.nullable(),
+  revision: z.number().int().positive(),
+  telegramMessageId: TelegramUserIdSchema.nullable(),
+});
+export type EditableTelegramReportDto = z.infer<typeof EditableTelegramReportDtoSchema>;
+
+export const NullableEditableTelegramReportDtoSchema = EditableTelegramReportDtoSchema.nullable();
+
+export const ReplaceTelegramReportDtoSchema = z.object({
+  telegramUserId: TelegramUserIdSchema,
+  reportId: CuidSchema,
+  expectedRevision: z.number().int().positive(),
+  text: TelegramReportTextSchema,
+  answers: TelegramReportAnswersSchema,
+  configuration: TelegramReportSectionsSchema,
+  telegramMessageId: TelegramUserIdSchema,
+});
+export type ReplaceTelegramReportDto = z.infer<typeof ReplaceTelegramReportDtoSchema>;
+
+const TelegramDailyPlanItemDescriptionSchema = z.string().trim().min(1).max(2000);
+
 export const TelegramDailyPlanItemDtoSchema = z.object({
   id: CuidSchema,
   text: z.string().min(1).max(160),
+  description: TelegramDailyPlanItemDescriptionSchema.nullable().default(null),
   completed: z.boolean(),
+  completedAt: z.string().datetime({ offset: true }).nullable().default(null),
+  carryCount: z.number().int().min(0).default(0),
   position: z.number().int().min(0),
 });
 export type TelegramDailyPlanItemDto = z.infer<typeof TelegramDailyPlanItemDtoSchema>;
@@ -220,6 +387,54 @@ export const TelegramDailyPlanDtoSchema = z.object({
 });
 export type TelegramDailyPlanDto = z.infer<typeof TelegramDailyPlanDtoSchema>;
 
+export const TelegramWeeklyPlanStatisticItemDtoSchema = z.object({
+  text: z.string().min(1).max(160),
+  carryCount: z.number().int().min(1),
+  completed: z.boolean(),
+});
+export type TelegramWeeklyPlanStatisticItemDto = z.infer<
+  typeof TelegramWeeklyPlanStatisticItemDtoSchema
+>;
+
+export const TelegramWeeklyPlanStatisticsDtoSchema = z.object({
+  telegramUserId: TelegramUserIdSchema,
+  locale: TelegramLocaleSchema,
+  periodStart: TelegramPlanDateSchema,
+  periodEnd: TelegramPlanDateSchema,
+  taskCount: z.number().int().min(0),
+  completedCount: z.number().int().min(0),
+  unfinishedCount: z.number().int().min(0),
+  carryEventCount: z.number().int().min(0),
+  completionRate: z.number().int().min(0).max(100),
+  mostCarriedItems: z.array(TelegramWeeklyPlanStatisticItemDtoSchema).max(5),
+});
+export type TelegramWeeklyPlanStatisticsDto = z.infer<typeof TelegramWeeklyPlanStatisticsDtoSchema>;
+
+export const GetTelegramWeeklyPlanStatisticsDtoSchema = z.object({
+  telegramUserId: TelegramUserIdSchema,
+  periodStart: TelegramPlanDateSchema,
+});
+export type GetTelegramWeeklyPlanStatisticsDto = z.infer<
+  typeof GetTelegramWeeklyPlanStatisticsDtoSchema
+>;
+
+export const ListTelegramWeeklyPlanStatisticsCandidatesDtoSchema = z.object({
+  periodStart: TelegramPlanDateSchema,
+  cursor: CuidSchema.nullable().optional(),
+  limit: z.number().int().min(1).max(50).default(10),
+});
+export type ListTelegramWeeklyPlanStatisticsCandidatesDto = z.infer<
+  typeof ListTelegramWeeklyPlanStatisticsCandidatesDtoSchema
+>;
+
+export const TelegramWeeklyPlanStatisticsCandidatePageDtoSchema = z.object({
+  items: z.array(TelegramWeeklyPlanStatisticsDtoSchema),
+  nextCursor: CuidSchema.nullable(),
+});
+export type TelegramWeeklyPlanStatisticsCandidatePageDto = z.infer<
+  typeof TelegramWeeklyPlanStatisticsCandidatePageDtoSchema
+>;
+
 export const GetOrCreateTelegramDailyPlanDtoSchema = z.object({
   telegramUserId: TelegramUserIdSchema,
   date: TelegramPlanDateSchema,
@@ -228,6 +443,7 @@ export type GetOrCreateTelegramDailyPlanDto = z.infer<typeof GetOrCreateTelegram
 
 export const AddTelegramDailyPlanItemDtoSchema = GetOrCreateTelegramDailyPlanDtoSchema.extend({
   text: z.string().trim().min(1).max(160),
+  description: TelegramDailyPlanItemDescriptionSchema.optional(),
 });
 export type AddTelegramDailyPlanItemDto = z.infer<typeof AddTelegramDailyPlanItemDtoSchema>;
 
@@ -237,11 +453,15 @@ export const UpdateTelegramDailyPlanItemDtoSchema = z
     date: TelegramPlanDateSchema,
     itemId: CuidSchema,
     text: z.string().trim().min(1).max(160).optional(),
+    description: TelegramDailyPlanItemDescriptionSchema.nullable().optional(),
     completed: z.boolean().optional(),
   })
-  .refine(dto => dto.text !== undefined || dto.completed !== undefined, {
-    message: 'At least one item field must be provided',
-  });
+  .refine(
+    dto => dto.text !== undefined || dto.description !== undefined || dto.completed !== undefined,
+    {
+      message: 'At least one item field must be provided',
+    },
+  );
 export type UpdateTelegramDailyPlanItemDto = z.infer<typeof UpdateTelegramDailyPlanItemDtoSchema>;
 
 export const ToggleTelegramDailyPlanItemDtoSchema = z.object({
@@ -459,5 +679,29 @@ function isValidTimezone(timezone: string): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+function validateTelegramReportPeriod(
+  report: {
+    type: TelegramReportType;
+    periodStart: string;
+    periodEnd: string;
+  },
+  context: z.RefinementCtx,
+): void {
+  const start = Date.parse(`${report.periodStart}T00:00:00.000Z`);
+  const end = Date.parse(`${report.periodEnd}T00:00:00.000Z`);
+  const expectedDays = report.type === 'daily' ? 0 : 6;
+
+  if (end - start !== expectedDays * 86_400_000) {
+    context.addIssue({
+      code: 'custom',
+      path: ['periodEnd'],
+      message:
+        report.type === 'daily'
+          ? 'Daily report period must contain exactly one date'
+          : 'Weekly report period must contain exactly seven dates',
+    });
   }
 }

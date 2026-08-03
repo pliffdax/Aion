@@ -60,7 +60,7 @@ function assertUniqueCommandNames(commands: readonly Command[]): void {
   }
 }
 
-function visibleCommands(commands: readonly Command[], isOwner: boolean): Command[] {
+export function visibleCommands(commands: readonly Command[], isOwner: boolean): Command[] {
   return commands.filter(command => command.access === 'user' || isOwner);
 }
 

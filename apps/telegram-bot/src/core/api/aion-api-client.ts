@@ -45,6 +45,85 @@ export class AionApiClient {
     });
   }
 
+  claimReportDelivery(
+    telegramUserId: number,
+    report: Omit<v1.ClaimTelegramReportDeliveryDto, 'telegramUserId'>,
+  ): Promise<v1.ClaimedTelegramReportDeliveryDto> {
+    return this.request(
+      '/telegram/reports/delivery/claim',
+      v1.ClaimedTelegramReportDeliveryDtoSchema,
+      'POST',
+      { telegramUserId: String(telegramUserId), ...report },
+    );
+  }
+
+  completeReportDelivery(
+    reportId: string,
+    deliveryToken: string,
+    telegramMessageId: number,
+  ): Promise<v1.TelegramReportDeliveryResultDto> {
+    return this.request(
+      '/telegram/reports/delivery/complete',
+      v1.TelegramReportDeliveryResultDtoSchema,
+      'POST',
+      { reportId, deliveryToken, telegramMessageId: String(telegramMessageId) },
+    );
+  }
+
+  failReportDelivery(
+    reportId: string,
+    deliveryToken: string,
+    error: string,
+  ): Promise<v1.TelegramReportDeliveryResultDto> {
+    return this.request(
+      '/telegram/reports/delivery/fail',
+      v1.TelegramReportDeliveryResultDtoSchema,
+      'POST',
+      { reportId, deliveryToken, error },
+    );
+  }
+
+  listReportHistory(
+    telegramUserId: number,
+    filters: Omit<v1.ListTelegramReportHistoryDto, 'telegramUserId'> = { limit: 10 },
+  ): Promise<v1.TelegramReportHistoryPageDto> {
+    return this.request(
+      '/telegram/reports/history',
+      v1.TelegramReportHistoryPageDtoSchema,
+      'POST',
+      { telegramUserId: String(telegramUserId), ...filters },
+    );
+  }
+
+  getReportHistoryItem(telegramUserId: number, reportId: string): Promise<v1.TelegramReportDto> {
+    return this.request('/telegram/reports/history/item', v1.TelegramReportDtoSchema, 'POST', {
+      telegramUserId: String(telegramUserId),
+      reportId,
+    });
+  }
+
+  findEditableReport(
+    telegramUserId: number,
+    report: Omit<v1.FindEditableTelegramReportDto, 'telegramUserId'>,
+  ): Promise<v1.EditableTelegramReportDto | null> {
+    return this.request(
+      '/telegram/reports/editable/find',
+      v1.NullableEditableTelegramReportDtoSchema,
+      'POST',
+      { telegramUserId: String(telegramUserId), ...report },
+    );
+  }
+
+  replaceReport(
+    telegramUserId: number,
+    report: Omit<v1.ReplaceTelegramReportDto, 'telegramUserId'>,
+  ): Promise<v1.EditableTelegramReportDto> {
+    return this.request('/telegram/reports/editable', v1.EditableTelegramReportDtoSchema, 'PATCH', {
+      telegramUserId: String(telegramUserId),
+      ...report,
+    });
+  }
+
   getOrCreateDailyPlan(telegramUserId: number, date: string): Promise<v1.TelegramDailyPlanDto> {
     return this.request('/telegram/daily-plans', v1.TelegramDailyPlanDtoSchema, 'PUT', {
       telegramUserId: String(telegramUserId),
@@ -56,11 +135,13 @@ export class AionApiClient {
     telegramUserId: number,
     date: string,
     text: string,
+    description?: string,
   ): Promise<v1.TelegramDailyPlanDto> {
     return this.request('/telegram/daily-plans/items', v1.TelegramDailyPlanDtoSchema, 'POST', {
       telegramUserId: String(telegramUserId),
       date,
       text,
+      ...(description !== undefined ? { description } : {}),
     });
   }
 
@@ -68,7 +149,7 @@ export class AionApiClient {
     telegramUserId: number,
     date: string,
     itemId: string,
-    fields: { text?: string; completed?: boolean },
+    fields: { text?: string; description?: string | null; completed?: boolean },
   ): Promise<v1.TelegramDailyPlanDto> {
     return this.request('/telegram/daily-plans/items', v1.TelegramDailyPlanDtoSchema, 'PATCH', {
       telegramUserId: String(telegramUserId),
@@ -119,6 +200,31 @@ export class AionApiClient {
         telegramUserId: String(telegramUserId),
         date,
       },
+    );
+  }
+
+  getWeeklyPlanStatistics(
+    telegramUserId: number,
+    periodStart: string,
+  ): Promise<v1.TelegramWeeklyPlanStatisticsDto> {
+    return this.request(
+      '/telegram/daily-plans/statistics/weekly',
+      v1.TelegramWeeklyPlanStatisticsDtoSchema,
+      'POST',
+      { telegramUserId: String(telegramUserId), periodStart },
+    );
+  }
+
+  listWeeklyPlanStatisticsCandidates(
+    periodStart: string,
+    cursor: string | null = null,
+    limit = 10,
+  ): Promise<v1.TelegramWeeklyPlanStatisticsCandidatePageDto> {
+    return this.request(
+      '/telegram/daily-plans/statistics/weekly/candidates',
+      v1.TelegramWeeklyPlanStatisticsCandidatePageDtoSchema,
+      'POST',
+      { periodStart, cursor, limit },
     );
   }
 

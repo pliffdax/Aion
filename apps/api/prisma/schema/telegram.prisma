@@ -13,8 +13,67 @@ model TelegramUser {
 
   dailyPlans DailyPlan[]
   reminders  TelegramReminder[]
+  reports    TelegramReport[]
 
   @@index([locale])
+}
+
+enum TelegramReportType {
+  DAILY
+  WEEKLY
+  WEEKLY_STATISTICS
+}
+
+enum TelegramReportDeliveryStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
+model TelegramReport {
+  id                String                       @id @default(cuid())
+  userId            String
+  type              TelegramReportType
+  periodStart       DateTime                     @db.Date
+  periodEnd         DateTime                     @db.Date
+  text              String                       @db.Text
+  answers           Json?
+  configuration     Json?
+  revision          Int                          @default(1)
+  deliveryStatus    TelegramReportDeliveryStatus @default(PENDING)
+  deliveryToken     String?                      @unique @db.VarChar(36)
+  claimedAt         DateTime?                    @db.Timestamptz(3)
+  sentAt            DateTime?                    @db.Timestamptz(3)
+  telegramMessageId BigInt?
+  lastError         String?                      @db.VarChar(500)
+  createdAt         DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime                     @updatedAt @db.Timestamptz(3)
+
+  user      TelegramUser             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  revisions TelegramReportRevision[]
+
+  @@unique([userId, type, periodStart, periodEnd])
+  @@index([userId, deliveryStatus, createdAt])
+  @@index([userId, type, periodStart])
+  @@index([deliveryStatus, claimedAt])
+}
+
+model TelegramReportRevision {
+  id                String    @id @default(cuid())
+  reportId          String
+  revision          Int
+  text              String    @db.Text
+  answers           Json?
+  configuration     Json?
+  telegramMessageId BigInt?
+  sentAt            DateTime? @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @db.Timestamptz(3)
+
+  report TelegramReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, revision])
+  @@index([reportId, createdAt])
 }
 
 model TelegramReminder {
@@ -68,14 +127,17 @@ model DailyPlan {
 }
 
 model DailyPlanItem {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   dailyPlanId       String
   carriedFromItemId String?
-  text              String   @db.VarChar(160)
-  completed         Boolean  @default(false)
+  text              String    @db.VarChar(160)
+  description       String?   @db.VarChar(2000)
+  completed         Boolean   @default(false)
+  completedAt       DateTime? @db.Timestamptz(3)
+  carryCount        Int       @default(0)
   position          Int
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   dailyPlan       DailyPlan       @relation(fields: [dailyPlanId], references: [id], onDelete: Cascade)
   carriedFromItem DailyPlanItem?  @relation("DailyPlanItemCarry", fields: [carriedFromItemId], references: [id], onDelete: SetNull)

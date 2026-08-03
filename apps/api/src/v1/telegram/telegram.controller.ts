@@ -4,6 +4,7 @@ import { ApiKeyGuard } from '@/common/api-key.guard';
 import { parseBody } from '@/common/zod';
 import { TelegramDailyPlanRolloverService } from './telegram-daily-plan-rollover.service';
 import { TelegramService } from './telegram.service';
+import { TelegramWeeklyStatisticsService } from './telegram-weekly-statistics.service';
 
 @UseGuards(ApiKeyGuard)
 @Controller('v1/telegram')
@@ -11,6 +12,7 @@ export class TelegramController {
   constructor(
     private readonly telegram: TelegramService,
     private readonly dailyPlanRollover: TelegramDailyPlanRolloverService,
+    private readonly weeklyStatistics: TelegramWeeklyStatisticsService,
   ) {}
 
   @Put('users')
@@ -27,6 +29,63 @@ export class TelegramController {
   updateUserReportProfile(@Body() body: unknown) {
     return this.telegram.updateUserReportProfile(
       parseBody(v1.UpdateTelegramReportProfileDtoSchema, body),
+    );
+  }
+
+  @Post('reports/delivery/claim')
+  claimReportDelivery(@Body() body: unknown) {
+    return this.telegram.claimReportDelivery(
+      parseBody(v1.ClaimTelegramReportDeliveryDtoSchema, body),
+    );
+  }
+
+  @Post('reports/delivery/complete')
+  completeReportDelivery(@Body() body: unknown) {
+    return this.telegram.completeReportDelivery(
+      parseBody(v1.CompleteTelegramReportDeliveryDtoSchema, body),
+    );
+  }
+
+  @Post('reports/delivery/fail')
+  failReportDelivery(@Body() body: unknown) {
+    return this.telegram.failReportDelivery(
+      parseBody(v1.FailTelegramReportDeliveryDtoSchema, body),
+    );
+  }
+
+  @Post('reports/history')
+  listReportHistory(@Body() body: unknown) {
+    return this.telegram.listReportHistory(parseBody(v1.ListTelegramReportHistoryDtoSchema, body));
+  }
+
+  @Post('reports/history/item')
+  getReportHistoryItem(@Body() body: unknown) {
+    return this.telegram.getReportHistoryItem(
+      parseBody(v1.GetTelegramReportHistoryItemDtoSchema, body),
+    );
+  }
+
+  @Post('reports/editable/find')
+  findEditableReport(@Body() body: unknown) {
+    return this.telegram.findEditableReport(
+      parseBody(v1.FindEditableTelegramReportDtoSchema, body),
+    );
+  }
+
+  @Patch('reports/editable')
+  replaceReport(@Body() body: unknown) {
+    return this.telegram.replaceReport(parseBody(v1.ReplaceTelegramReportDtoSchema, body));
+  }
+
+  @Post('daily-plans/statistics/weekly')
+  getWeeklyPlanStatistics(@Body() body: unknown) {
+    return this.weeklyStatistics.get(parseBody(v1.GetTelegramWeeklyPlanStatisticsDtoSchema, body));
+  }
+
+  @Post('daily-plans/statistics/weekly/candidates')
+  listWeeklyPlanStatisticsCandidates(@Body() body: unknown) {
+    return this.weeklyStatistics.listCandidates(
+      parseBody(v1.ListTelegramWeeklyPlanStatisticsCandidatesDtoSchema, body),
     );
   }
 
