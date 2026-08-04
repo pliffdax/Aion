@@ -9,36 +9,74 @@ import {
   ownsTextInput,
   releaseTextInput,
 } from '../../core/interactions/text-input-owner.js';
-import { currentKyivDateKey, kyivTimeZone } from '../../core/time/kyiv-calendar.js';
+import {
+  currentKyivDateKey,
+  formatDateKeyInput,
+  kyivTimeZone,
+  parseDateKeyInput,
+  shiftDateKey,
+} from '../../core/time/kyiv-calendar.js';
 import { isTelegramMessageNotModified } from '../../core/telegram-errors.js';
 
 const timeZone = kyivTimeZone;
 const maxItems = 20;
 const maxItemLength = 160;
 const maxDescriptionLength = 2000;
-const toggleCallbackPattern = /^daily-plan:toggle:([^:]+)$/;
-const manageToggleCallbackPattern = /^daily-plan:manage-toggle:([^:]+)$/;
-const openManagementItemCallbackPattern = /^daily-plan:item:([^:]+)$/;
-const manageItemCallbackPattern = /^daily-plan:(edit|description|delete):([^:]+)$/;
-const confirmDeleteCallbackPattern = /^daily-plan:confirm-delete:([^:]+)$/;
-const clearDescriptionCallbackPattern = /^daily-plan:clear-description:([^:]+)$/;
+const dateKeyPattern = '\\d{4}-\\d{2}-\\d{2}';
+const openDateCallbackPattern = new RegExp(`^dp:o:(${dateKeyPattern})$`);
+const chooseDateCallbackPattern = new RegExp(`^dp:c:(${dateKeyPattern})$`);
+const pickDateCallbackPattern = new RegExp(`^dp:p:(${dateKeyPattern})$`);
+const addCallbackPattern = new RegExp(`^(?:daily-plan:add|dp:a:(${dateKeyPattern}))$`);
+const manageCallbackPattern = new RegExp(`^(?:daily-plan:manage|dp:m:(${dateKeyPattern}))$`);
+const toggleCallbackPattern = new RegExp(
+  `^(?:daily-plan:toggle:([^:]+)|dp:t:(${dateKeyPattern}):([^:]+))$`,
+);
+const hideCompletedCallbackPattern = new RegExp(
+  `^(?:daily-plan:(?:clear|hide)-completed|dp:h:(${dateKeyPattern}))$`,
+);
+const showCompletedCallbackPattern = new RegExp(
+  `^(?:daily-plan:show-completed|dp:s:(${dateKeyPattern}))$`,
+);
+const manageToggleCallbackPattern = new RegExp(
+  `^(?:daily-plan:manage-toggle:([^:]+)|dp:mt:(${dateKeyPattern}):([^:]+))$`,
+);
+const openManagementItemCallbackPattern = new RegExp(
+  `^(?:daily-plan:item:([^:]+)|dp:i:(${dateKeyPattern}):([^:]+))$`,
+);
+const managementListCallbackPattern = new RegExp(
+  `^(?:daily-plan:management-list|dp:ml:(${dateKeyPattern}))$`,
+);
+const manageItemCallbackPattern = new RegExp(
+  `^(?:daily-plan:(edit|description|delete):([^:]+)|dp:(e|d|x):(${dateKeyPattern}):([^:]+))$`,
+);
+const confirmDeleteCallbackPattern = new RegExp(
+  `^(?:daily-plan:confirm-delete:([^:]+)|dp:xd:(${dateKeyPattern}):([^:]+))$`,
+);
+const clearDescriptionCallbackPattern = new RegExp(
+  `^(?:daily-plan:clear-description:([^:]+)|dp:cd:(${dateKeyPattern}):([^:]+))$`,
+);
 
 interface MessageReference {
   chatId: number;
   messageId: number;
 }
 
+interface DatedMessageReference extends MessageReference {
+  date: string;
+}
+
 type PendingInput =
-  | { kind: 'add-title'; prompt: MessageReference }
-  | { kind: 'add-description-choice'; text: string; prompt: MessageReference }
-  | { kind: 'add-description'; text: string; prompt: MessageReference }
-  | { kind: 'edit-title'; itemId: string; prompt: MessageReference }
-  | { kind: 'edit-description'; itemId: string; prompt: MessageReference };
+  | { kind: 'select-date'; date: string; prompt: MessageReference }
+  | { kind: 'add-title'; date: string; prompt: MessageReference }
+  | { kind: 'add-description-choice'; date: string; text: string; prompt: MessageReference }
+  | { kind: 'add-description'; date: string; text: string; prompt: MessageReference }
+  | { kind: 'edit-title'; date: string; itemId: string; prompt: MessageReference }
+  | { kind: 'edit-description'; date: string; itemId: string; prompt: MessageReference };
 
 interface DailyPlanInteractionState {
   ownerId: number;
-  activePanel: MessageReference | null;
-  managementMessage: MessageReference | null;
+  activePanel: DatedMessageReference | null;
+  managementMessage: DatedMessageReference | null;
   pendingInput: PendingInput | null;
   hideCompleted: boolean;
 }
@@ -52,7 +90,7 @@ export const command: Command = {
   async handle(context) {
     const state = stateForOwner(context.from?.id);
     const apiClient = requireApiClient();
-    const plan = await loadTodayPlan(apiClient, state.ownerId);
+    const plan = await loadPlan(apiClient, state.ownerId, currentDateKey());
     state.hideCompleted = false;
 
     await prepareTransientSurface(context.api, state);
@@ -62,7 +100,7 @@ export const command: Command = {
       reply_markup: buildPlanKeyboard(plan, state.hideCompleted),
     });
 
-    state.activePanel = messageReference(panel);
+    state.activePanel = datedMessageReference(panel, plan.date);
   },
 };
 
@@ -71,10 +109,87 @@ let registeredApiClient: AionApiClient | null = null;
 export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): void {
   registeredApiClient = apiClient;
 
-  bot.callbackQuery('daily-plan:add', async context => {
+  bot.callbackQuery(openDateCallbackPattern, async context => {
+    const state = stateForOwner(context.from.id);
+    const date = requiredMatch(context.callbackQuery.data, openDateCallbackPattern)[1]!;
+    const plan = await loadPlan(apiClient, state.ownerId, date);
+    const panelMessage = context.callbackQuery.message;
+
+    await prepareTransientSurface(context.api, state);
+    state.hideCompleted = false;
+    await context.answerCallbackQuery();
+
+    if (panelMessage) {
+      state.activePanel = datedMessageReference(panelMessage, plan.date);
+    }
+
+    await context.editMessageText(renderPlan(plan, state.hideCompleted), {
+      parse_mode: 'HTML',
+      reply_markup: buildPlanKeyboard(plan, state.hideCompleted),
+    });
+  });
+
+  bot.callbackQuery(chooseDateCallbackPattern, async context => {
     const state = stateForOwner(context.from.id);
     const locale = getLocale(state.ownerId);
-    const plan = await loadTodayPlan(apiClient, state.ownerId);
+    const currentDate = requiredMatch(context.callbackQuery.data, chooseDateCallbackPattern)[1]!;
+    const panelMessage = context.callbackQuery.message;
+
+    if (!panelMessage) {
+      await context.answerCallbackQuery(translate(locale, 'daily.panelUnavailable'));
+      return;
+    }
+
+    state.activePanel = datedMessageReference(panelMessage, currentDate);
+    await prepareTransientSurface(context.api, state);
+    await context.answerCallbackQuery();
+
+    const prompt = await context.reply(renderDatePrompt(locale, currentDate), {
+      parse_mode: 'HTML',
+      reply_markup: buildDateChoiceKeyboard(locale),
+    });
+    state.pendingInput = {
+      kind: 'select-date',
+      date: currentDate,
+      prompt: messageReference(prompt),
+    };
+    claimTextInput(state.ownerId, 'daily-plan');
+  });
+
+  bot.callbackQuery(pickDateCallbackPattern, async context => {
+    const state = stateForOwner(context.from.id);
+    const locale = getLocale(state.ownerId);
+    const pendingInput = state.pendingInput;
+
+    if (
+      pendingInput?.kind !== 'select-date' ||
+      !isPromptCallback(pendingInput, context.callbackQuery.message?.message_id)
+    ) {
+      await context.answerCallbackQuery(translate(locale, 'daily.actionExpired'));
+      return;
+    }
+
+    const date = requiredMatch(context.callbackQuery.data, pickDateCallbackPattern)[1]!;
+    const plan = await loadPlan(apiClient, state.ownerId, date);
+    state.pendingInput = null;
+    releaseTextInput(state.ownerId, 'daily-plan');
+    await context.answerCallbackQuery();
+    await context.deleteMessage().catch(() => undefined);
+    await showSelectedPlan(context, state, plan);
+  });
+
+  bot.callbackQuery(addCallbackPattern, async context => {
+    const state = stateForOwner(context.from.id);
+    const locale = getLocale(state.ownerId);
+    const match = requiredMatch(context.callbackQuery.data, addCallbackPattern);
+    const date = match[1] ?? currentDateKey();
+    const plan = await loadPlan(apiClient, state.ownerId, date);
+
+    if (!isEditablePlanDate(plan.date)) {
+      await context.answerCallbackQuery(translate(locale, 'daily.readOnlyAction'));
+      return;
+    }
+
     await context.answerCallbackQuery();
 
     if (plan.items.length >= maxItems) {
@@ -89,11 +204,14 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
       return;
     }
 
-    state.activePanel = messageReference(panelMessage);
+    state.activePanel = datedMessageReference(panelMessage, plan.date);
     await removePendingPrompt(context.api, state);
 
     const prompt = await context.reply(
-      translate(locale, 'daily.addPrompt', { max: maxItemLength }),
+      translate(locale, 'daily.addPrompt', {
+        date: formatPlanDate(plan.date, locale),
+        max: maxItemLength,
+      }),
       {
         reply_markup: new InlineKeyboard().text(
           translate(locale, 'daily.cancel'),
@@ -104,14 +222,24 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
 
     state.pendingInput = {
       kind: 'add-title',
+      date: plan.date,
       prompt: messageReference(prompt),
     };
     claimTextInput(state.ownerId, 'daily-plan');
   });
 
-  bot.callbackQuery('daily-plan:manage', async context => {
+  bot.callbackQuery(manageCallbackPattern, async context => {
     const state = stateForOwner(context.from.id);
-    const plan = await loadTodayPlan(apiClient, state.ownerId);
+    const locale = getLocale(state.ownerId);
+    const match = requiredMatch(context.callbackQuery.data, manageCallbackPattern);
+    const date = match[1] ?? currentDateKey();
+    const plan = await loadPlan(apiClient, state.ownerId, date);
+
+    if (!isEditablePlanDate(plan.date)) {
+      await context.answerCallbackQuery(translate(locale, 'daily.readOnlyAction'));
+      return;
+    }
+
     await prepareTransientSurface(context.api, state);
     await context.answerCallbackQuery();
 
@@ -119,14 +247,14 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
 
     if (!panelMessage) return;
 
-    state.activePanel = messageReference(panelMessage);
+    state.activePanel = datedMessageReference(panelMessage, plan.date);
 
     const managementMessage = await context.reply(renderManagement(plan), {
       parse_mode: 'HTML',
       reply_markup: buildManagementKeyboard(plan),
     });
 
-    state.managementMessage = messageReference(managementMessage);
+    state.managementMessage = datedMessageReference(managementMessage, plan.date);
   });
 
   bot.callbackQuery('daily-plan:management-done', async context => {
@@ -165,7 +293,15 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
       return;
     }
 
-    const plan = await loadTodayPlan(apiClient, state.ownerId);
+    if (!isEditablePlanDate(pendingInput.date)) {
+      state.pendingInput = null;
+      releaseTextInput(state.ownerId, 'daily-plan');
+      await context.answerCallbackQuery(translate(locale, 'daily.readOnlyAction'));
+      await context.deleteMessage().catch(() => undefined);
+      return;
+    }
+
+    const plan = await loadPlan(apiClient, state.ownerId, pendingInput.date);
     const item = plan.items.find(candidate => candidate.id === pendingInput.itemId);
     state.pendingInput = null;
     releaseTextInput(state.ownerId, 'daily-plan');
@@ -181,7 +317,7 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
 
     await context.editMessageText(renderItemDetails(locale, plan, item), {
       parse_mode: 'HTML',
-      reply_markup: buildItemDetailsKeyboard(locale, item),
+      reply_markup: buildItemDetailsKeyboard(locale, plan.date, item),
     });
   });
 
@@ -198,15 +334,30 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
       return;
     }
 
+    if (!isEditablePlanDate(pendingInput.date)) {
+      state.pendingInput = null;
+      releaseTextInput(state.ownerId, 'daily-plan');
+      await context.answerCallbackQuery(translate(locale, 'daily.readOnlyAction'));
+      await context.deleteMessage().catch(() => undefined);
+      return;
+    }
+
     state.pendingInput = {
       kind: 'add-description',
+      date: pendingInput.date,
       text: pendingInput.text,
       prompt: pendingInput.prompt,
     };
     claimTextInput(state.ownerId, 'daily-plan');
     await context.answerCallbackQuery();
     await context.editMessageText(
-      translate(locale, 'daily.descriptionPrompt', { max: maxDescriptionLength }),
+      [
+        translate(locale, 'daily.dateLabel', {
+          date: formatPlanDate(pendingInput.date, locale),
+        }),
+        '',
+        translate(locale, 'daily.descriptionPrompt', { max: maxDescriptionLength }),
+      ].join('\n'),
       {
         reply_markup: buildCancelKeyboard(locale),
       },
@@ -226,9 +377,17 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
       return;
     }
 
+    if (!isEditablePlanDate(pendingInput.date)) {
+      state.pendingInput = null;
+      releaseTextInput(state.ownerId, 'daily-plan');
+      await context.answerCallbackQuery(translate(locale, 'daily.readOnlyAction'));
+      await context.deleteMessage().catch(() => undefined);
+      return;
+    }
+
     const plan = await apiClient.addDailyPlanItem(
       state.ownerId,
-      currentDateKey(),
+      pendingInput.date,
       pendingInput.text,
     );
     state.pendingInput = null;
@@ -240,10 +399,19 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
 
   bot.callbackQuery(toggleCallbackPattern, async context => {
     const state = stateForOwner(context.from.id);
-    let plan = await loadTodayPlan(apiClient, state.ownerId);
+    const target = parseItemCallback(context.callbackQuery.data, toggleCallbackPattern);
+    let plan = await loadPlan(apiClient, state.ownerId, target.date);
+
+    if (!isEditablePlanDate(plan.date)) {
+      await context.answerCallbackQuery(
+        translate(getLocale(state.ownerId), 'daily.readOnlyAction'),
+      );
+      return;
+    }
+
     await context.answerCallbackQuery();
 
-    const item = findItemFromCallback(plan, context.callbackQuery.data, toggleCallbackPattern);
+    const item = plan.items.find(candidate => candidate.id === target.itemId);
 
     if (item) {
       plan = await apiClient.toggleDailyPlanItem(state.ownerId, plan.date, item.id);
@@ -252,7 +420,7 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
     const panelMessage = context.callbackQuery.message;
 
     if (panelMessage) {
-      state.activePanel = messageReference(panelMessage);
+      state.activePanel = datedMessageReference(panelMessage, plan.date);
     }
 
     await context.editMessageText(renderPlan(plan, state.hideCompleted), {
@@ -262,9 +430,10 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
     await refreshManagementMessage(context.api, state, plan);
   });
 
-  bot.callbackQuery(/^daily-plan:(?:clear|hide)-completed$/, async context => {
+  bot.callbackQuery(hideCompletedCallbackPattern, async context => {
     const state = stateForOwner(context.from.id);
-    const plan = await loadTodayPlan(apiClient, state.ownerId);
+    const match = requiredMatch(context.callbackQuery.data, hideCompletedCallbackPattern);
+    const plan = await loadPlan(apiClient, state.ownerId, match[1] ?? currentDateKey());
     state.hideCompleted = true;
     await context.answerCallbackQuery();
 
@@ -275,9 +444,10 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
     await refreshManagementMessage(context.api, state, plan);
   });
 
-  bot.callbackQuery('daily-plan:show-completed', async context => {
+  bot.callbackQuery(showCompletedCallbackPattern, async context => {
     const state = stateForOwner(context.from.id);
-    const plan = await loadTodayPlan(apiClient, state.ownerId);
+    const match = requiredMatch(context.callbackQuery.data, showCompletedCallbackPattern);
+    const plan = await loadPlan(apiClient, state.ownerId, match[1] ?? currentDateKey());
     state.hideCompleted = false;
     await context.answerCallbackQuery();
 
@@ -291,12 +461,15 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
   bot.callbackQuery(manageToggleCallbackPattern, async context => {
     const state = stateForOwner(context.from.id);
     const locale = getLocale(state.ownerId);
-    let plan = await loadTodayPlan(apiClient, state.ownerId);
-    const item = findItemFromCallback(
-      plan,
-      context.callbackQuery.data,
-      manageToggleCallbackPattern,
-    );
+    const target = parseItemCallback(context.callbackQuery.data, manageToggleCallbackPattern);
+    let plan = await loadPlan(apiClient, state.ownerId, target.date);
+
+    if (!isEditablePlanDate(plan.date)) {
+      await context.answerCallbackQuery(translate(locale, 'daily.readOnlyAction'));
+      return;
+    }
+
+    const item = plan.items.find(candidate => candidate.id === target.itemId);
 
     if (item) {
       plan = await apiClient.toggleDailyPlanItem(state.ownerId, plan.date, item.id);
@@ -313,7 +486,7 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
     } else {
       await context.editMessageText(renderItemDetails(locale, plan, updatedItem), {
         parse_mode: 'HTML',
-        reply_markup: buildItemDetailsKeyboard(locale, updatedItem),
+        reply_markup: buildItemDetailsKeyboard(locale, plan.date, updatedItem),
       });
     }
 
@@ -323,12 +496,9 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
   bot.callbackQuery(openManagementItemCallbackPattern, async context => {
     const state = stateForOwner(context.from.id);
     const locale = getLocale(state.ownerId);
-    const plan = await loadTodayPlan(apiClient, state.ownerId);
-    const item = findItemFromCallback(
-      plan,
-      context.callbackQuery.data,
-      openManagementItemCallbackPattern,
-    );
+    const target = parseItemCallback(context.callbackQuery.data, openManagementItemCallbackPattern);
+    const plan = await loadPlan(apiClient, state.ownerId, target.date);
+    const item = plan.items.find(candidate => candidate.id === target.itemId);
 
     await context.answerCallbackQuery();
 
@@ -343,18 +513,20 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
     const message = context.callbackQuery.message;
 
     if (message) {
-      state.managementMessage = messageReference(message);
+      state.managementMessage = datedMessageReference(message, plan.date);
     }
 
     await context.editMessageText(renderItemDetails(locale, plan, item), {
       parse_mode: 'HTML',
-      reply_markup: buildItemDetailsKeyboard(locale, item),
+      reply_markup: buildItemDetailsKeyboard(locale, plan.date, item),
     });
   });
 
-  bot.callbackQuery('daily-plan:management-list', async context => {
+  bot.callbackQuery(managementListCallbackPattern, async context => {
     const state = stateForOwner(context.from.id);
-    const plan = await loadTodayPlan(apiClient, state.ownerId);
+    const match = requiredMatch(context.callbackQuery.data, managementListCallbackPattern);
+    const date = match[1] ?? state.managementMessage?.date ?? currentDateKey();
+    const plan = await loadPlan(apiClient, state.ownerId, date);
     await removePendingInputWithoutDeleting(state);
     await context.answerCallbackQuery();
     await context.editMessageText(renderManagement(plan), {
@@ -366,12 +538,20 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
   bot.callbackQuery(manageItemCallbackPattern, async context => {
     const state = stateForOwner(context.from.id);
     const locale = getLocale(state.ownerId);
-    const plan = await loadTodayPlan(apiClient, state.ownerId);
-    await context.answerCallbackQuery();
-
     const match = manageItemCallbackPattern.exec(context.callbackQuery.data);
-    const action = match?.[1];
-    const itemId = match?.[2];
+    const shortAction = match?.[3];
+    const action =
+      match?.[1] ?? (shortAction === 'e' ? 'edit' : shortAction === 'd' ? 'description' : 'delete');
+    const date = match?.[4] ?? state.managementMessage?.date ?? currentDateKey();
+    const itemId = match?.[2] ?? match?.[5];
+    const plan = await loadPlan(apiClient, state.ownerId, date);
+
+    if (!isEditablePlanDate(plan.date)) {
+      await context.answerCallbackQuery(translate(locale, 'daily.readOnlyAction'));
+      return;
+    }
+
+    await context.answerCallbackQuery();
     const item = plan.items.find(candidate => candidate.id === itemId);
 
     if (!item) {
@@ -385,7 +565,7 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
         {
           parse_mode: 'HTML',
           reply_markup: new InlineKeyboard()
-            .text(translate(locale, 'daily.delete'), `daily-plan:confirm-delete:${item.id}`)
+            .text(translate(locale, 'daily.delete'), `dp:xd:${plan.date}:${item.id}`)
             .text(translate(locale, 'daily.cancel'), 'daily-plan:cancel-delete'),
         },
       );
@@ -398,16 +578,17 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
 
     if (!managementMessage) return;
 
-    state.managementMessage = messageReference(managementMessage);
+    state.managementMessage = datedMessageReference(managementMessage, plan.date);
 
     if (action === 'description') {
-      await context.editMessageText(renderDescriptionEditPrompt(locale, item), {
+      await context.editMessageText(renderDescriptionEditPrompt(locale, plan.date, item), {
         parse_mode: 'HTML',
         reply_markup: buildEditInputKeyboard(locale),
       });
 
       state.pendingInput = {
         kind: 'edit-description',
+        date: plan.date,
         itemId: item.id,
         prompt: messageReference(managementMessage),
       };
@@ -416,7 +597,13 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
     }
 
     await context.editMessageText(
-      `${translate(locale, 'daily.editPrompt', { max: maxItemLength })}\n\n${escapeHtml(item.text)}`,
+      [
+        translate(locale, 'daily.dateLabel', { date: formatPlanDate(plan.date, locale) }),
+        '',
+        translate(locale, 'daily.editPrompt', { max: maxItemLength }),
+        '',
+        escapeHtml(item.text),
+      ].join('\n'),
       {
         parse_mode: 'HTML',
         reply_markup: buildEditInputKeyboard(locale),
@@ -425,6 +612,7 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
 
     state.pendingInput = {
       kind: 'edit-title',
+      date: plan.date,
       itemId: item.id,
       prompt: messageReference(managementMessage),
     };
@@ -434,12 +622,16 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
   bot.callbackQuery(confirmDeleteCallbackPattern, async context => {
     const state = stateForOwner(context.from.id);
     const locale = getLocale(state.ownerId);
-    let plan = await loadTodayPlan(apiClient, state.ownerId);
-    const item = findItemFromCallback(
-      plan,
-      context.callbackQuery.data,
-      confirmDeleteCallbackPattern,
-    );
+    const target = parseItemCallback(context.callbackQuery.data, confirmDeleteCallbackPattern);
+    let plan = await loadPlan(apiClient, state.ownerId, target.date);
+
+    if (!isEditablePlanDate(plan.date)) {
+      await context.answerCallbackQuery(translate(locale, 'daily.readOnlyAction'));
+      await context.deleteMessage().catch(() => undefined);
+      return;
+    }
+
+    const item = plan.items.find(candidate => candidate.id === target.itemId);
 
     if (item) {
       plan = await apiClient.deleteDailyPlanItem(state.ownerId, plan.date, item.id);
@@ -456,16 +648,22 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
   bot.callbackQuery(clearDescriptionCallbackPattern, async context => {
     const state = stateForOwner(context.from.id);
     const locale = getLocale(state.ownerId);
-    const itemId = clearDescriptionCallbackPattern.exec(context.callbackQuery.data)?.[1];
-    const currentPlan = await loadTodayPlan(apiClient, state.ownerId);
-    const item = currentPlan.items.find(candidate => candidate.id === itemId);
+    const target = parseItemCallback(context.callbackQuery.data, clearDescriptionCallbackPattern);
+    const currentPlan = await loadPlan(apiClient, state.ownerId, target.date);
+
+    if (!isEditablePlanDate(currentPlan.date)) {
+      await context.answerCallbackQuery(translate(locale, 'daily.readOnlyAction'));
+      return;
+    }
+
+    const item = currentPlan.items.find(candidate => candidate.id === target.itemId);
 
     if (!item) {
       await context.answerCallbackQuery(translate(locale, 'daily.actionExpired'));
       return;
     }
 
-    const plan = await apiClient.updateDailyPlanItem(state.ownerId, currentDateKey(), item.id, {
+    const plan = await apiClient.updateDailyPlanItem(state.ownerId, currentPlan.date, item.id, {
       description: null,
     });
     state.pendingInput = null;
@@ -484,7 +682,7 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
 
     await context.editMessageText(renderItemDetails(locale, plan, updatedItem), {
       parse_mode: 'HTML',
-      reply_markup: buildItemDetailsKeyboard(locale, updatedItem),
+      reply_markup: buildItemDetailsKeyboard(locale, plan.date, updatedItem),
     });
   });
 
@@ -510,6 +708,48 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
 
     const text = context.message.text.trim();
     const pendingInput = state.pendingInput;
+
+    if (pendingInput.kind === 'select-date') {
+      const date = parseDateKeyInput(text);
+      await context.deleteMessage().catch(() => undefined);
+
+      if (!date) {
+        await context.api.editMessageText(
+          pendingInput.prompt.chatId,
+          pendingInput.prompt.messageId,
+          `${translate(locale, 'daily.invalidDate')}\n\n${renderDatePrompt(locale, pendingInput.date)}`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: buildDateChoiceKeyboard(locale),
+          },
+        );
+        return;
+      }
+
+      const plan = await loadPlan(apiClient, state.ownerId, date);
+      state.pendingInput = null;
+      releaseTextInput(state.ownerId, 'daily-plan');
+      await context.api
+        .deleteMessage(pendingInput.prompt.chatId, pendingInput.prompt.messageId)
+        .catch(() => undefined);
+      await showSelectedPlan(context, state, plan);
+      return;
+    }
+
+    if (!isEditablePlanDate(pendingInput.date)) {
+      state.pendingInput = null;
+      releaseTextInput(state.ownerId, 'daily-plan');
+      await context.deleteMessage().catch(() => undefined);
+      await context.api
+        .editMessageText(
+          pendingInput.prompt.chatId,
+          pendingInput.prompt.messageId,
+          translate(locale, 'daily.readOnlyAction'),
+        )
+        .catch(() => undefined);
+      return;
+    }
+
     const isDescription =
       pendingInput.kind === 'add-description' || pendingInput.kind === 'edit-description';
     const maxLength = isDescription ? maxDescriptionLength : maxItemLength;
@@ -541,7 +781,7 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
     await context.deleteMessage().catch(() => undefined);
 
     if (pendingInput.kind === 'add-title') {
-      const promptText = renderDescriptionChoice(locale, text);
+      const promptText = renderDescriptionChoice(locale, text, pendingInput.date);
       const replyMarkup = buildDescriptionChoiceKeyboard(locale);
       const prompt = await context.api
         .editMessageText(pendingInput.prompt.chatId, pendingInput.prompt.messageId, promptText, {
@@ -559,6 +799,7 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
         );
       state.pendingInput = {
         kind: 'add-description-choice',
+        date: pendingInput.date,
         text,
         prompt,
       };
@@ -566,12 +807,15 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
       return;
     }
 
-    const date = currentDateKey();
-
     if (pendingInput.kind === 'edit-title' || pendingInput.kind === 'edit-description') {
-      const plan = await apiClient.updateDailyPlanItem(state.ownerId, date, pendingInput.itemId, {
-        ...(pendingInput.kind === 'edit-description' ? { description: text } : { text }),
-      });
+      const plan = await apiClient.updateDailyPlanItem(
+        state.ownerId,
+        pendingInput.date,
+        pendingInput.itemId,
+        {
+          ...(pendingInput.kind === 'edit-description' ? { description: text } : { text }),
+        },
+      );
       const updatedItem = plan.items.find(candidate => candidate.id === pendingInput.itemId);
 
       state.pendingInput = null;
@@ -584,7 +828,7 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
           renderItemDetails(locale, plan, updatedItem),
           {
             parse_mode: 'HTML',
-            reply_markup: buildItemDetailsKeyboard(locale, updatedItem),
+            reply_markup: buildItemDetailsKeyboard(locale, plan.date, updatedItem),
           },
         );
       } else {
@@ -606,7 +850,12 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
       return;
     }
 
-    const plan = await apiClient.addDailyPlanItem(state.ownerId, date, pendingInput.text, text);
+    const plan = await apiClient.addDailyPlanItem(
+      state.ownerId,
+      pendingInput.date,
+      pendingInput.text,
+      text,
+    );
 
     state.pendingInput = null;
     releaseTextInput(state.ownerId, 'daily-plan');
@@ -617,11 +866,44 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
   });
 }
 
-async function loadTodayPlan(
+async function loadPlan(
   apiClient: AionApiClient,
   ownerId: number,
+  date: string,
 ): Promise<v1.TelegramDailyPlanDto> {
-  return apiClient.getOrCreateDailyPlan(ownerId, currentDateKey());
+  return apiClient.getOrCreateDailyPlan(ownerId, date);
+}
+
+async function showSelectedPlan(
+  context: Context,
+  state: DailyPlanInteractionState,
+  plan: v1.TelegramDailyPlanDto,
+): Promise<void> {
+  const activePanel = state.activePanel;
+  state.hideCompleted = false;
+
+  if (activePanel) {
+    const updated = await context.api
+      .editMessageText(
+        activePanel.chatId,
+        activePanel.messageId,
+        renderPlan(plan, state.hideCompleted),
+        {
+          parse_mode: 'HTML',
+          reply_markup: buildPlanKeyboard(plan, state.hideCompleted),
+        },
+      )
+      .then(() => true)
+      .catch(error => isTelegramMessageNotModified(error));
+
+    if (updated) {
+      state.activePanel = { ...activePanel, date: plan.date };
+      return;
+    }
+  }
+
+  state.activePanel = null;
+  await showUpdatedPlan(context, state, plan);
 }
 
 async function showUpdatedPlan(
@@ -637,7 +919,7 @@ async function showUpdatedPlan(
       reply_markup: buildPlanKeyboard(plan, state.hideCompleted),
     });
 
-    state.activePanel = messageReference(panel);
+    state.activePanel = datedMessageReference(panel, plan.date);
   }
 
   await refreshManagementMessage(context.api, state, plan);
@@ -646,15 +928,25 @@ async function showUpdatedPlan(
 async function showInputError(
   telegramApi: TelegramApi,
   locale: ReturnType<typeof getLocale>,
-  pendingInput: Exclude<PendingInput, { kind: 'add-description-choice' }>,
+  pendingInput: Exclude<PendingInput, { kind: 'add-description-choice' } | { kind: 'select-date' }>,
   error: string,
 ): Promise<void> {
   const instruction =
     pendingInput.kind === 'add-title'
-      ? translate(locale, 'daily.addPrompt', { max: maxItemLength })
+      ? translate(locale, 'daily.addPrompt', {
+          date: formatPlanDate(pendingInput.date, locale),
+          max: maxItemLength,
+        })
       : pendingInput.kind === 'edit-title'
         ? translate(locale, 'daily.editPrompt', { max: maxItemLength })
         : translate(locale, 'daily.descriptionPrompt', { max: maxDescriptionLength });
+  const datedInstruction = [
+    translate(locale, 'daily.dateLabel', {
+      date: formatPlanDate(pendingInput.date, locale),
+    }),
+    '',
+    instruction,
+  ].join('\n');
   const replyMarkup =
     pendingInput.kind === 'edit-description' || pendingInput.kind === 'edit-title'
       ? buildEditInputKeyboard(locale)
@@ -663,7 +955,7 @@ async function showInputError(
   await telegramApi.editMessageText(
     pendingInput.prompt.chatId,
     pendingInput.prompt.messageId,
-    `${error}\n\n${instruction}`,
+    `${error}\n\n${datedInstruction}`,
     { reply_markup: replyMarkup },
   );
 }
@@ -731,7 +1023,7 @@ async function refreshPlanPanel(
 ): Promise<boolean> {
   const activePanel = state.activePanel;
 
-  if (!activePanel) return false;
+  if (!activePanel || activePanel.date !== plan.date) return false;
 
   return telegramApi
     .editMessageText(
@@ -758,7 +1050,7 @@ async function refreshManagementMessage(
 ): Promise<void> {
   const managementMessage = state.managementMessage;
 
-  if (!managementMessage) return;
+  if (!managementMessage || managementMessage.date !== plan.date) return;
 
   await telegramApi
     .editMessageText(
@@ -780,17 +1072,30 @@ function currentDateKey(): string {
   return currentKyivDateKey();
 }
 
-function renderDescriptionChoice(locale: ReturnType<typeof getLocale>, text: string): string {
+function renderDescriptionChoice(
+  locale: ReturnType<typeof getLocale>,
+  text: string,
+  date: string,
+): string {
   return [
     `<b>${translate(locale, 'daily.itemDraft')}</b>`,
     escapeHtml(text),
+    '',
+    translate(locale, 'daily.dateLabel', { date: formatPlanDate(date, locale) }),
     '',
     translate(locale, 'daily.descriptionChoice'),
   ].join('\n');
 }
 
+function renderDatePrompt(locale: ReturnType<typeof getLocale>, exampleDate: string): string {
+  return translate(locale, 'daily.datePrompt', {
+    example: formatDateKeyInput(exampleDate),
+  });
+}
+
 function renderDescriptionEditPrompt(
   locale: ReturnType<typeof getLocale>,
+  date: string,
   item: v1.TelegramDailyPlanItemDto,
 ): string {
   const description = item.description
@@ -798,6 +1103,8 @@ function renderDescriptionEditPrompt(
     : `<i>${translate(locale, 'daily.noDescription')}</i>`;
 
   return [
+    translate(locale, 'daily.dateLabel', { date: formatPlanDate(date, locale) }),
+    '',
     `<b>${translate(locale, 'daily.titleLabel')}</b>`,
     escapeHtml(item.text),
     '',
@@ -810,12 +1117,7 @@ function renderDescriptionEditPrompt(
 
 export function renderPlan(plan: v1.TelegramDailyPlanDto, hideCompleted = false): string {
   const locale = getLocale(Number(plan.telegramUserId));
-  const date = new Intl.DateTimeFormat(dateLocale(locale), {
-    timeZone,
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(new Date(`${plan.date}T00:00:00.000Z`));
+  const date = formatPlanDate(plan.date, locale);
   const completedCount = plan.items.filter(item => item.completed).length;
   const itemLines = renderItemLines(plan, hideCompleted);
   const items =
@@ -824,12 +1126,13 @@ export function renderPlan(plan: v1.TelegramDailyPlanDto, hideCompleted = false)
       : `<i>${translate(locale, hideCompleted ? 'daily.completedHidden' : 'daily.emptyPlan')}</i>`;
 
   return [
-    `<b>${translate(locale, 'daily.title')}</b>`,
+    `<b>${renderPlanTitle(plan.date, locale)}</b>`,
     `<i>${date}</i>`,
     '',
     items,
     '',
     `<code>${completedCount}/${plan.items.length}</code> ${translate(locale, 'daily.completed')}`,
+    ...(isEditablePlanDate(plan.date) ? [] : ['', `<i>${translate(locale, 'daily.readOnly')}</i>`]),
   ].join('\n');
 }
 
@@ -841,6 +1144,7 @@ export function renderManagement(plan: v1.TelegramDailyPlanDto): string {
 
   return [
     `<b>${translate(locale, 'daily.managementTitle')}</b>`,
+    `<i>${formatPlanDate(plan.date, locale)}</i>`,
     translate(locale, 'daily.managementHint'),
     '',
     items,
@@ -859,6 +1163,7 @@ export function renderItemDetails(
 
   return [
     `<b>${translate(locale, 'daily.itemDetailsTitle', { number })}</b>`,
+    `<i>${formatPlanDate(plan.date, locale)}</i>`,
     '',
     `<b>${translate(locale, 'daily.titleLabel')}</b>`,
     escapeHtml(item.text),
@@ -890,37 +1195,48 @@ export function buildPlanKeyboard(
 ): InlineKeyboard {
   const locale = getLocale(Number(plan.telegramUserId));
   const keyboard = new InlineKeyboard();
+  const editable = isEditablePlanDate(plan.date);
   const visibleItems = plan.items
     .map((item, index) => ({ item, index }))
     .filter(({ item }) => !hideCompleted || !item.completed);
 
   for (const [visibleIndex, { item, index }] of visibleItems.entries()) {
+    if (!editable) break;
     const marker = item.completed ? '✅' : '⬜️';
-    keyboard.text(`${marker} ${index + 1}`, `daily-plan:toggle:${item.id}`);
+    keyboard.text(`${marker} ${index + 1}`, `dp:t:${plan.date}:${item.id}`);
 
     if ((visibleIndex + 1) % 5 === 0) keyboard.row();
   }
 
-  if (visibleItems.length % 5 !== 0) keyboard.row();
+  if (editable && visibleItems.length % 5 !== 0) keyboard.row();
 
-  keyboard.text(translate(locale, 'daily.add'), 'daily-plan:add');
+  if (editable) {
+    keyboard.text(translate(locale, 'daily.add'), `dp:a:${plan.date}`);
 
-  if (plan.items.length > 0) {
-    keyboard.text(translate(locale, 'daily.manage'), 'daily-plan:manage');
+    if (plan.items.length > 0) {
+      keyboard.text(translate(locale, 'daily.manage'), `dp:m:${plan.date}`);
+    }
   }
 
   const completedCount = plan.items.filter(item => item.completed).length;
 
-  if (completedCount > 0) {
+  if (editable && completedCount > 0) {
     keyboard.row().text(
       translate(locale, hideCompleted ? 'daily.showCompleted' : 'daily.hideCompleted', {
         count: completedCount,
       }),
-      hideCompleted ? 'daily-plan:show-completed' : 'daily-plan:hide-completed',
+      hideCompleted ? `dp:s:${plan.date}` : `dp:h:${plan.date}`,
     );
   }
 
-  return keyboard;
+  if (editable) keyboard.row();
+
+  return keyboard
+    .text('◀️', `dp:o:${shiftDateKey(plan.date, -1)}`)
+    .text(translate(locale, 'daily.today'), `dp:o:${currentDateKey()}`)
+    .text('▶️', `dp:o:${shiftDateKey(plan.date, 1)}`)
+    .row()
+    .text(translate(locale, 'daily.chooseDate'), `dp:c:${plan.date}`);
 }
 
 function buildCancelKeyboard(locale: ReturnType<typeof getLocale>): InlineKeyboard {
@@ -935,55 +1251,96 @@ function buildDescriptionChoiceKeyboard(locale: ReturnType<typeof getLocale>): I
     .text(translate(locale, 'daily.cancel'), 'daily-plan:cancel-input');
 }
 
+function buildDateChoiceKeyboard(locale: ReturnType<typeof getLocale>): InlineKeyboard {
+  const today = currentDateKey();
+  return new InlineKeyboard()
+    .text(translate(locale, 'daily.today'), `dp:p:${today}`)
+    .text(translate(locale, 'daily.tomorrow'), `dp:p:${shiftDateKey(today, 1)}`)
+    .row()
+    .text(translate(locale, 'daily.inOneWeek'), `dp:p:${shiftDateKey(today, 7)}`)
+    .row()
+    .text(translate(locale, 'daily.cancel'), 'daily-plan:cancel-input');
+}
+
 function buildEditInputKeyboard(locale: ReturnType<typeof getLocale>): InlineKeyboard {
   return new InlineKeyboard().text(translate(locale, 'daily.cancel'), 'daily-plan:cancel-edit');
 }
 
 function buildItemDetailsKeyboard(
   locale: ReturnType<typeof getLocale>,
+  date: string,
   item: v1.TelegramDailyPlanItemDto,
 ): InlineKeyboard {
+  if (!isEditablePlanDate(date)) {
+    return new InlineKeyboard().text(translate(locale, 'daily.backToManagement'), `dp:ml:${date}`);
+  }
+
   const keyboard = new InlineKeyboard()
-    .text(translate(locale, 'daily.editTitle'), `daily-plan:edit:${item.id}`)
+    .text(translate(locale, 'daily.editTitle'), `dp:e:${date}:${item.id}`)
     .row()
-    .text(translate(locale, 'daily.editDescription'), `daily-plan:description:${item.id}`)
+    .text(translate(locale, 'daily.editDescription'), `dp:d:${date}:${item.id}`)
     .row();
 
   if (item.description) {
-    keyboard
-      .text(translate(locale, 'daily.clearDescription'), `daily-plan:clear-description:${item.id}`)
-      .row();
+    keyboard.text(translate(locale, 'daily.clearDescription'), `dp:cd:${date}:${item.id}`).row();
   }
 
   return keyboard
     .text(
       translate(locale, item.completed ? 'daily.markIncomplete' : 'daily.markCompleted'),
-      `daily-plan:manage-toggle:${item.id}`,
+      `dp:mt:${date}:${item.id}`,
     )
     .row()
-    .text(translate(locale, 'daily.delete'), `daily-plan:delete:${item.id}`)
+    .text(translate(locale, 'daily.delete'), `dp:x:${date}:${item.id}`)
     .row()
-    .text(translate(locale, 'daily.backToManagement'), 'daily-plan:management-list');
+    .text(translate(locale, 'daily.backToManagement'), `dp:ml:${date}`);
 }
 
 function buildManagementKeyboard(plan: v1.TelegramDailyPlanDto): InlineKeyboard {
   const locale = getLocale(Number(plan.telegramUserId));
   const keyboard = new InlineKeyboard();
 
-  for (const [index, item] of plan.items.entries()) {
-    keyboard.text(`⚙️ ${index + 1}`, `daily-plan:item:${item.id}`).row();
+  if (isEditablePlanDate(plan.date)) {
+    for (const [index, item] of plan.items.entries()) {
+      keyboard.text(`⚙️ ${index + 1}`, `dp:i:${plan.date}:${item.id}`).row();
+    }
   }
 
   return keyboard.text(translate(locale, 'daily.done'), 'daily-plan:management-done');
 }
 
-function findItemFromCallback(
-  plan: v1.TelegramDailyPlanDto,
-  data: string,
-  pattern: RegExp,
-): v1.TelegramDailyPlanItemDto | undefined {
-  const itemId = pattern.exec(data)?.[1];
-  return plan.items.find(item => item.id === itemId);
+function requiredMatch(data: string, pattern: RegExp): RegExpExecArray {
+  const match = pattern.exec(data);
+  if (!match) throw new Error(`Unexpected daily plan callback: ${data}`);
+  return match;
+}
+
+function parseItemCallback(data: string, pattern: RegExp): { date: string; itemId: string } {
+  const match = requiredMatch(data, pattern);
+  return {
+    date: match[2] ?? currentDateKey(),
+    itemId: match[3] ?? match[1]!,
+  };
+}
+
+function formatPlanDate(date: string, locale: ReturnType<typeof getLocale>): string {
+  return new Intl.DateTimeFormat(dateLocale(locale), {
+    timeZone,
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date(`${date}T00:00:00.000Z`));
+}
+
+function renderPlanTitle(date: string, locale: ReturnType<typeof getLocale>): string {
+  const today = currentDateKey();
+  if (date === today) return translate(locale, 'daily.title');
+  if (date === shiftDateKey(today, 1)) return translate(locale, 'daily.titleTomorrow');
+  return translate(locale, 'daily.titleSelected');
+}
+
+function isEditablePlanDate(date: string): boolean {
+  return date >= currentDateKey();
 }
 
 function stateForOwner(ownerId: number | undefined): DailyPlanInteractionState {
@@ -1014,11 +1371,19 @@ function messageReference(message: { chat: { id: number }; message_id: number })
   };
 }
 
+function datedMessageReference(
+  message: { chat: { id: number }; message_id: number },
+  date: string,
+): DatedMessageReference {
+  return { ...messageReference(message), date };
+}
+
 export function setActiveDailyPlanPanel(
   userId: number,
   message: { chat: { id: number }; message_id: number },
+  date = currentDateKey(),
 ): void {
-  stateForOwner(userId).activePanel = messageReference(message);
+  stateForOwner(userId).activePanel = datedMessageReference(message, date);
 }
 
 function requireApiClient(): AionApiClient {

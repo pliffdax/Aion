@@ -121,7 +121,7 @@ async function deliverRollover(
       parse_mode: 'HTML',
       reply_markup: buildPlanKeyboard(claim.targetPlan),
     });
-    setActiveDailyPlanPanel(chatId, panel);
+    setActiveDailyPlanPanel(chatId, panel, claim.targetPlan.date);
     await apiClient.completeDailyPlanRollover(claim.sourcePlan.id, claim.deliveryToken);
     logInfo('telegram.daily_plan.rollover_delivered', {
       telegramUserId: claim.sourcePlan.telegramUserId,
