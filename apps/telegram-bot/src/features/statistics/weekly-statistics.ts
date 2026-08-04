@@ -2,7 +2,7 @@ import type { v1 } from '@aion/contracts';
 import { InlineKeyboard } from 'grammy';
 import { escapeHtml } from '../../core/formatting/html.js';
 import { translate, type Locale } from '../../core/i18n/i18n.js';
-import { shiftDateKey } from '../../core/time/kyiv-calendar.js';
+import { parseDateKeyInput, shiftDateKey } from '../../core/time/kyiv-calendar.js';
 
 export function latestCompletedWeekStart(dateKey: string): string {
   const day = new Date(`${dateKey}T00:00:00.000Z`).getUTCDay();
@@ -16,25 +16,7 @@ export function weekStartContainingDate(dateKey: string): string {
 }
 
 export function parseStatisticsDateInput(input: string): string | null {
-  const value = input.trim();
-  const localized = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(value);
-  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(value);
-  const year = Number(localized?.[3] ?? iso?.[1]);
-  const month = Number(localized?.[2] ?? iso?.[2]);
-  const day = Number(localized?.[1] ?? iso?.[3]);
-
-  if (!localized && !iso) return null;
-
-  const date = new Date(Date.UTC(year, month - 1, day));
-  if (
-    date.getUTCFullYear() !== year ||
-    date.getUTCMonth() !== month - 1 ||
-    date.getUTCDate() !== day
-  ) {
-    return null;
-  }
-
-  return date.toISOString().slice(0, 10);
+  return parseDateKeyInput(input);
 }
 
 export function formatStatisticsDateInput(dateKey: string): string {
