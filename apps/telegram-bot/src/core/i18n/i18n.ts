@@ -134,9 +134,9 @@ const translations = {
   ],
   'daily.dateLabel': ['Дата: {date}', 'Дата: {date}', 'Date: {date}'],
   'daily.datePrompt': [
-    'Выберите дату или введите её в формате ДД.ММ.ГГГГ.',
-    'Виберіть дату або введіть її у форматі ДД.ММ.РРРР.',
-    'Choose a date or enter it as DD.MM.YYYY.',
+    '<b>📅 Выбор даты плана</b>\n\nВведите дату в формате <code>ДД.ММ.ГГГГ</code>.\nНапример: <code>{example}</code>',
+    '<b>📅 Вибір дати плану</b>\n\nВведіть дату у форматі <code>ДД.ММ.РРРР</code>.\nНаприклад: <code>{example}</code>',
+    '<b>📅 Choose a plan date</b>\n\nEnter a date in the format <code>DD.MM.YYYY</code>.\nFor example: <code>{example}</code>',
   ],
   'daily.invalidDate': [
     'Не удалось распознать дату.',

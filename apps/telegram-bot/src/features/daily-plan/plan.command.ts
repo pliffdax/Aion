@@ -11,6 +11,7 @@ import {
 } from '../../core/interactions/text-input-owner.js';
 import {
   currentKyivDateKey,
+  formatDateKeyInput,
   kyivTimeZone,
   parseDateKeyInput,
   shiftDateKey,
@@ -65,7 +66,7 @@ interface DatedMessageReference extends MessageReference {
 }
 
 type PendingInput =
-  | { kind: 'select-date'; prompt: MessageReference }
+  | { kind: 'select-date'; date: string; prompt: MessageReference }
   | { kind: 'add-title'; date: string; prompt: MessageReference }
   | { kind: 'add-description-choice'; date: string; text: string; prompt: MessageReference }
   | { kind: 'add-description'; date: string; text: string; prompt: MessageReference }
@@ -143,10 +144,15 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
     await prepareTransientSurface(context.api, state);
     await context.answerCallbackQuery();
 
-    const prompt = await context.reply(translate(locale, 'daily.datePrompt'), {
+    const prompt = await context.reply(renderDatePrompt(locale, currentDate), {
+      parse_mode: 'HTML',
       reply_markup: buildDateChoiceKeyboard(locale),
     });
-    state.pendingInput = { kind: 'select-date', prompt: messageReference(prompt) };
+    state.pendingInput = {
+      kind: 'select-date',
+      date: currentDate,
+      prompt: messageReference(prompt),
+    };
     claimTextInput(state.ownerId, 'daily-plan');
   });
 
@@ -711,8 +717,11 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
         await context.api.editMessageText(
           pendingInput.prompt.chatId,
           pendingInput.prompt.messageId,
-          `${translate(locale, 'daily.invalidDate')}\n\n${translate(locale, 'daily.datePrompt')}`,
-          { reply_markup: buildDateChoiceKeyboard(locale) },
+          `${translate(locale, 'daily.invalidDate')}\n\n${renderDatePrompt(locale, pendingInput.date)}`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: buildDateChoiceKeyboard(locale),
+          },
         );
         return;
       }
@@ -1076,6 +1085,12 @@ function renderDescriptionChoice(
     '',
     translate(locale, 'daily.descriptionChoice'),
   ].join('\n');
+}
+
+function renderDatePrompt(locale: ReturnType<typeof getLocale>, exampleDate: string): string {
+  return translate(locale, 'daily.datePrompt', {
+    example: formatDateKeyInput(exampleDate),
+  });
 }
 
 function renderDescriptionEditPrompt(

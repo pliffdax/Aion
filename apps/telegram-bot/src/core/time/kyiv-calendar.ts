@@ -39,6 +39,11 @@ export function parseDateKeyInput(input: string): string | null {
   return date.toISOString().slice(0, 10);
 }
 
+export function formatDateKeyInput(dateKey: string): string {
+  const [year, month, day] = dateKey.split('-');
+  return `${day}.${month}.${year}`;
+}
+
 export function millisecondsUntilNextKyivMidnight(now = new Date()): number {
   const nextDate = shiftDateKey(currentKyivDateKey(now), 1);
   const [year, month, day] = nextDate.split('-').map(Number);
