@@ -3,6 +3,7 @@ import test from 'node:test';
 import { v1 } from '@aion/contracts';
 import { Bot } from 'grammy';
 import type { AionApiClient } from '../../core/api/aion-api-client.js';
+import { translate } from '../../core/i18n/i18n.js';
 import {
   currentKyivDateKey,
   parseDateKeyInput,
@@ -98,6 +99,14 @@ test('parses exact plan dates and rejects impossible dates', () => {
   assert.equal(parseDateKeyInput('12.08.2026'), '2026-08-12');
   assert.equal(parseDateKeyInput('2026-8-12'), '2026-08-12');
   assert.equal(parseDateKeyInput('31.02.2026'), null);
+});
+
+test('renders the plan date prompt with the shared copyable format and example style', () => {
+  const prompt = translate('ru', 'daily.datePrompt', { example: '12.08.2026' });
+
+  assert.match(prompt, /<b>📅 Выбор даты плана<\/b>/);
+  assert.match(prompt, /<code>ДД\.ММ\.ГГГГ<\/code>/);
+  assert.match(prompt, /<code>12\.08\.2026<\/code>/);
 });
 
 test('adds a plan item to the date encoded in the opened panel', async () => {

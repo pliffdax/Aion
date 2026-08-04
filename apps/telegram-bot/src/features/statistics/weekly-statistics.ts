@@ -2,7 +2,11 @@ import type { v1 } from '@aion/contracts';
 import { InlineKeyboard } from 'grammy';
 import { escapeHtml } from '../../core/formatting/html.js';
 import { translate, type Locale } from '../../core/i18n/i18n.js';
-import { parseDateKeyInput, shiftDateKey } from '../../core/time/kyiv-calendar.js';
+import {
+  formatDateKeyInput,
+  parseDateKeyInput,
+  shiftDateKey,
+} from '../../core/time/kyiv-calendar.js';
 
 export function latestCompletedWeekStart(dateKey: string): string {
   const day = new Date(`${dateKey}T00:00:00.000Z`).getUTCDay();
@@ -20,8 +24,7 @@ export function parseStatisticsDateInput(input: string): string | null {
 }
 
 export function formatStatisticsDateInput(dateKey: string): string {
-  const [year, month, day] = dateKey.split('-');
-  return `${day}.${month}.${year}`;
+  return formatDateKeyInput(dateKey);
 }
 
 export function weeklyStatisticsPeriodEnd(periodStart: string): string {
