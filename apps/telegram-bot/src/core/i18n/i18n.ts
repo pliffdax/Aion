@@ -128,9 +128,20 @@ const translations = {
     'Could not find the plan message. Run /plan again.',
   ],
   'daily.addPrompt': [
-    'Напишите название нового пункта — до {max} символов.',
-    'Напишіть назву нового пункту — до {max} символів.',
-    'Enter the new item title — up to {max} characters.',
+    'Напишите название нового пункта на {date} — до {max} символов.',
+    'Напишіть назву нового пункту на {date} — до {max} символів.',
+    'Enter the new item title for {date} — up to {max} characters.',
+  ],
+  'daily.dateLabel': ['Дата: {date}', 'Дата: {date}', 'Date: {date}'],
+  'daily.datePrompt': [
+    'Выберите дату или введите её в формате ДД.ММ.ГГГГ.',
+    'Виберіть дату або введіть її у форматі ДД.ММ.РРРР.',
+    'Choose a date or enter it as DD.MM.YYYY.',
+  ],
+  'daily.invalidDate': [
+    'Не удалось распознать дату.',
+    'Не вдалося розпізнати дату.',
+    'Could not recognize that date.',
   ],
   'daily.itemDraft': ['Пункт плана:', 'Пункт плану:', 'Plan item:'],
   'daily.descriptionChoice': [
@@ -193,6 +204,22 @@ const translations = {
     'Shorten the description to {max} characters.',
   ],
   'daily.title': ['План на сегодня', 'План на сьогодні', "Today's plan"],
+  'daily.titleTomorrow': ['План на завтра', 'План на завтра', "Tomorrow's plan"],
+  'daily.titleSelected': [
+    'План на выбранную дату',
+    'План на вибрану дату',
+    'Plan for selected date',
+  ],
+  'daily.readOnly': [
+    'Прошедший день доступен только для просмотра.',
+    'Минулий день доступний лише для перегляду.',
+    'Past days are read-only.',
+  ],
+  'daily.readOnlyAction': [
+    'Прошедший план нельзя изменять.',
+    'Минулий план не можна змінювати.',
+    'Past plans cannot be changed.',
+  ],
   'daily.emptyPlan': ['План пока пуст.', 'План поки порожній.', 'The plan is empty.'],
   'daily.completedHidden': [
     'Все выполненные пункты скрыты.',
@@ -217,6 +244,10 @@ const translations = {
   ],
   'daily.add': ['➕ Добавить', '➕ Додати', '➕ Add'],
   'daily.manage': ['⚙️ Управление', '⚙️ Керування', '⚙️ Manage'],
+  'daily.today': ['Сегодня', 'Сьогодні', 'Today'],
+  'daily.tomorrow': ['Завтра', 'Завтра', 'Tomorrow'],
+  'daily.inOneWeek': ['Через неделю', 'Через тиждень', 'In one week'],
+  'daily.chooseDate': ['📅 Выбрать дату', '📅 Обрати дату', '📅 Choose date'],
   'daily.hideCompleted': [
     '🙈 Скрыть выполненные ({count})',
     '🙈 Сховати виконані ({count})',

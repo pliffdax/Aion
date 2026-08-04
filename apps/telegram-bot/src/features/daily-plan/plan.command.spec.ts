@@ -4,16 +4,23 @@ import { v1 } from '@aion/contracts';
 import { Bot } from 'grammy';
 import type { AionApiClient } from '../../core/api/aion-api-client.js';
 import {
+  currentKyivDateKey,
+  parseDateKeyInput,
+  shiftDateKey,
+} from '../../core/time/kyiv-calendar.js';
+import {
   buildPlanKeyboard,
   registerDailyPlanHandlers,
   renderManagement,
   renderPlan,
 } from './plan.command.js';
 
+const today = currentKyivDateKey();
+
 const plan: v1.TelegramDailyPlanDto = {
   id: 'cm0000000000000000000000',
   telegramUserId: '123456789',
-  date: '2026-08-03',
+  date: today,
   items: [
     {
       id: 'cm0000000000000000000001',
@@ -59,10 +66,139 @@ test('hides completed items only in the main panel and offers a reversible actio
 
   const visibleKeyboard = JSON.stringify(buildPlanKeyboard(planWithCompleted));
   const hiddenKeyboard = JSON.stringify(buildPlanKeyboard(planWithCompleted, true));
-  assert.match(visibleKeyboard, /daily-plan:hide-completed/);
-  assert.doesNotMatch(hiddenKeyboard, new RegExp(`daily-plan:toggle:${completedItem.id}`));
-  assert.match(hiddenKeyboard, /daily-plan:show-completed/);
+  assert.match(visibleKeyboard, new RegExp(`dp:h:${today}`));
+  assert.doesNotMatch(hiddenKeyboard, new RegExp(`dp:t:${today}:${completedItem.id}`));
+  assert.match(hiddenKeyboard, new RegExp(`dp:s:${today}`));
   assert.match(hiddenKeyboard, /\(1\)/);
+});
+
+test('navigates across dates and keeps past plans read-only', () => {
+  const tomorrow = shiftDateKey(today, 1);
+  const yesterday = shiftDateKey(today, -1);
+  const futurePlan = { ...plan, date: tomorrow };
+  const pastPlan = { ...plan, date: yesterday };
+  const futureKeyboard = JSON.stringify(buildPlanKeyboard(futurePlan));
+  const pastKeyboard = JSON.stringify(buildPlanKeyboard(pastPlan));
+
+  assert.match(renderPlan(futurePlan), /План на завтра/);
+  assert.match(futureKeyboard, new RegExp(`dp:a:${tomorrow}`));
+  assert.match(futureKeyboard, new RegExp(`dp:o:${today}`));
+  assert.match(futureKeyboard, new RegExp(`dp:c:${tomorrow}`));
+
+  assert.match(renderPlan(pastPlan), /только для просмотра/);
+  assert.doesNotMatch(pastKeyboard, /dp:a:/);
+  assert.doesNotMatch(pastKeyboard, /dp:t:/);
+  assert.equal(
+    buildPlanKeyboard(pastPlan).inline_keyboard.every(row => row.length > 0),
+    true,
+  );
+});
+
+test('parses exact plan dates and rejects impossible dates', () => {
+  assert.equal(parseDateKeyInput('12.08.2026'), '2026-08-12');
+  assert.equal(parseDateKeyInput('2026-8-12'), '2026-08-12');
+  assert.equal(parseDateKeyInput('31.02.2026'), null);
+});
+
+test('adds a plan item to the date encoded in the opened panel', async () => {
+  const userId = 987654324;
+  const tomorrow = shiftDateKey(today, 1);
+  const addedDates: string[] = [];
+  let nextMessageId = 100;
+  const bot = new Bot('123456:test-token', {
+    botInfo: {
+      id: 123456,
+      is_bot: true,
+      first_name: 'Aion Test',
+      username: 'aion_test_bot',
+      can_join_groups: false,
+      can_read_all_group_messages: false,
+      supports_inline_queries: false,
+      can_connect_to_business: false,
+      has_main_web_app: false,
+      has_topics_enabled: false,
+      allows_users_to_create_topics: false,
+      can_manage_bots: false,
+      supports_join_request_queries: false,
+    },
+  });
+  bot.api.config.use(async (_previous, method, payload) => {
+    if (method === 'sendMessage' || method === 'editMessageText') {
+      const messagePayload = payload as { message_id?: number; text?: string };
+      return {
+        ok: true,
+        result: {
+          message_id:
+            method === 'sendMessage' ? nextMessageId++ : Number(messagePayload.message_id),
+          date: 0,
+          chat: { id: userId, type: 'private', first_name: 'Test' },
+          text: String(messagePayload.text),
+        },
+      } as never;
+    }
+
+    return { ok: true, result: true } as never;
+  });
+  registerDailyPlanHandlers(bot, {
+    getOrCreateDailyPlan: async (_userId: number, date: string) => ({
+      ...plan,
+      telegramUserId: String(userId),
+      date,
+      items: [],
+    }),
+    addDailyPlanItem: async (
+      _userId: number,
+      date: string,
+      text: string,
+    ): Promise<v1.TelegramDailyPlanDto> => {
+      addedDates.push(date);
+      return {
+        ...plan,
+        telegramUserId: String(userId),
+        date,
+        items: [{ ...plan.items[0]!, text, description: null }],
+      };
+    },
+  } as unknown as AionApiClient);
+
+  const panelMessage = {
+    message_id: 10,
+    date: 0,
+    chat: { id: userId, type: 'private' as const, first_name: 'Test' },
+    text: 'future plan panel',
+  };
+  await bot.handleUpdate({
+    update_id: 30,
+    callback_query: {
+      id: 'add-future-item',
+      from: { id: userId, is_bot: false, first_name: 'Test' },
+      chat_instance: 'test-chat',
+      data: `dp:a:${tomorrow}`,
+      message: panelMessage,
+    },
+  });
+  await bot.handleUpdate({
+    update_id: 31,
+    message: {
+      message_id: 11,
+      date: 0,
+      chat: { id: userId, type: 'private', first_name: 'Test' },
+      from: { id: userId, is_bot: false, first_name: 'Test' },
+      text: 'Задача на завтра',
+    },
+  });
+  await bot.handleUpdate({
+    update_id: 32,
+    callback_query: {
+      id: 'without-description',
+      from: { id: userId, is_bot: false, first_name: 'Test' },
+      chat_instance: 'test-chat',
+      data: 'daily-plan:add-without-description',
+      message: { ...panelMessage, message_id: 100, text: 'description choice' },
+    },
+  });
+
+  assert.deepEqual(addedDates, [tomorrow]);
 });
 
 test('validates optional daily plan descriptions at the API boundary', () => {
