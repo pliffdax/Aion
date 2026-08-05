@@ -2,6 +2,10 @@ import type { v1 } from '@aion/contracts';
 import { Bot, InlineKeyboard, type Api as TelegramApi, type Context } from 'grammy';
 import type { AionApiClient } from '../../core/api/aion-api-client.js';
 import type { Command } from '../../core/commands/command.js';
+import {
+  addCopyCurrentTextButton,
+  renderCopyableText,
+} from '../../core/formatting/copyable-text.js';
 import { escapeHtml } from '../../core/formatting/html.js';
 import { dateLocale, getLocale, translate } from '../../core/i18n/i18n.js';
 import {
@@ -70,8 +74,20 @@ type PendingInput =
   | { kind: 'add-title'; date: string; prompt: MessageReference }
   | { kind: 'add-description-choice'; date: string; text: string; prompt: MessageReference }
   | { kind: 'add-description'; date: string; text: string; prompt: MessageReference }
-  | { kind: 'edit-title'; date: string; itemId: string; prompt: MessageReference }
-  | { kind: 'edit-description'; date: string; itemId: string; prompt: MessageReference };
+  | {
+      kind: 'edit-title';
+      date: string;
+      itemId: string;
+      currentValue: string;
+      prompt: MessageReference;
+    }
+  | {
+      kind: 'edit-description';
+      date: string;
+      itemId: string;
+      currentValue: string | null;
+      prompt: MessageReference;
+    };
 
 interface DailyPlanInteractionState {
   ownerId: number;
@@ -583,13 +599,14 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
     if (action === 'description') {
       await context.editMessageText(renderDescriptionEditPrompt(locale, plan.date, item), {
         parse_mode: 'HTML',
-        reply_markup: buildEditInputKeyboard(locale),
+        reply_markup: buildEditInputKeyboard(locale, item.description),
       });
 
       state.pendingInput = {
         kind: 'edit-description',
         date: plan.date,
         itemId: item.id,
+        currentValue: item.description,
         prompt: messageReference(managementMessage),
       };
       claimTextInput(state.ownerId, 'daily-plan');
@@ -602,11 +619,11 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
         '',
         translate(locale, 'daily.editPrompt', { max: maxItemLength }),
         '',
-        escapeHtml(item.text),
+        renderCopyableText(item.text),
       ].join('\n'),
       {
         parse_mode: 'HTML',
-        reply_markup: buildEditInputKeyboard(locale),
+        reply_markup: buildEditInputKeyboard(locale, item.text),
       },
     );
 
@@ -614,6 +631,7 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
       kind: 'edit-title',
       date: plan.date,
       itemId: item.id,
+      currentValue: item.text,
       prompt: messageReference(managementMessage),
     };
     claimTextInput(state.ownerId, 'daily-plan');
@@ -949,14 +967,19 @@ async function showInputError(
   ].join('\n');
   const replyMarkup =
     pendingInput.kind === 'edit-description' || pendingInput.kind === 'edit-title'
-      ? buildEditInputKeyboard(locale)
+      ? buildEditInputKeyboard(locale, pendingInput.currentValue)
       : buildCancelKeyboard(locale);
+  const currentValue =
+    (pendingInput.kind === 'edit-description' || pendingInput.kind === 'edit-title') &&
+    pendingInput.currentValue
+      ? `\n\n${renderCopyableText(pendingInput.currentValue)}`
+      : '';
 
   await telegramApi.editMessageText(
     pendingInput.prompt.chatId,
     pendingInput.prompt.messageId,
-    `${error}\n\n${datedInstruction}`,
-    { reply_markup: replyMarkup },
+    `${error}\n\n${datedInstruction}${currentValue}`,
+    { parse_mode: 'HTML', reply_markup: replyMarkup },
   );
 }
 
@@ -1099,7 +1122,7 @@ function renderDescriptionEditPrompt(
   item: v1.TelegramDailyPlanItemDto,
 ): string {
   const description = item.description
-    ? escapeHtml(item.description)
+    ? renderCopyableText(item.description)
     : `<i>${translate(locale, 'daily.noDescription')}</i>`;
 
   return [
@@ -1262,8 +1285,14 @@ function buildDateChoiceKeyboard(locale: ReturnType<typeof getLocale>): InlineKe
     .text(translate(locale, 'daily.cancel'), 'daily-plan:cancel-input');
 }
 
-function buildEditInputKeyboard(locale: ReturnType<typeof getLocale>): InlineKeyboard {
-  return new InlineKeyboard().text(translate(locale, 'daily.cancel'), 'daily-plan:cancel-edit');
+function buildEditInputKeyboard(
+  locale: ReturnType<typeof getLocale>,
+  currentValue: string | null,
+): InlineKeyboard {
+  return addCopyCurrentTextButton(new InlineKeyboard(), locale, currentValue).text(
+    translate(locale, 'daily.cancel'),
+    'daily-plan:cancel-edit',
+  );
 }
 
 function buildItemDetailsKeyboard(
