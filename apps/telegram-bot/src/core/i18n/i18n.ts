@@ -4,7 +4,7 @@ const supportedLocales = ['ru', 'uk', 'en'] as const;
 
 export type Locale = (typeof supportedLocales)[number];
 
-const defaultLocale: Locale = 'ru';
+const defaultLocale: Locale = 'uk';
 const localesByUserId = new Map<number, Locale>();
 const localeIndexes: Record<Locale, 0 | 1 | 2> = { ru: 0, uk: 1, en: 2 };
 

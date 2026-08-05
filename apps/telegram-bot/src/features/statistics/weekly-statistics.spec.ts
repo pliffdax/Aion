@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { v1 } from '@aion/contracts';
 import { Bot } from 'grammy';
 import type { AionApiClient } from '../../core/api/aion-api-client.js';
+import { setLocale } from '../../core/i18n/i18n.js';
 import { isTelegramMessageNotModified } from '../../core/telegram-errors.js';
 import { registerStatisticsHandlers } from './statistics.command.js';
 import {
@@ -88,6 +89,7 @@ test('parses a selected calendar date and resolves its Monday', () => {
 
 test('asks for a date, removes the input, and opens the containing week', async () => {
   const userId = 987654321;
+  setLocale(userId, 'ru');
   const apiCalls: { method: string; payload: Record<string, unknown> }[] = [];
   const requestedPeriods: string[] = [];
   const bot = new Bot('123456:test-token', {
