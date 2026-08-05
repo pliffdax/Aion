@@ -241,6 +241,36 @@ const translations = {
   'daily.itemDetailsTitle': ['Пункт {number}', 'Пункт {number}', 'Item {number}'],
   'daily.editTitle': ['✏️ Изменить название', '✏️ Змінити назву', '✏️ Change title'],
   'daily.editDescription': ['📝 Изменить описание', '📝 Змінити опис', '📝 Change description'],
+  'daily.move': ['📅 Перенести', '📅 Перенести', '📅 Move'],
+  'daily.moveTitle': ['📅 Перенос пункта', '📅 Перенесення пункту', '📅 Move item'],
+  'daily.moveSourceDate': ['Текущая дата: {date}', 'Поточна дата: {date}', 'Current date: {date}'],
+  'daily.movePrompt': [
+    'Выберите быструю дату или введите новую в формате <code>ДД.ММ.ГГГГ</code>.\nНапример: <code>{example}</code>',
+    'Оберіть швидку дату або введіть нову у форматі <code>ДД.ММ.РРРР</code>.\nНаприклад: <code>{example}</code>',
+    'Choose a quick date or enter a new one in <code>DD.MM.YYYY</code> format.\nFor example: <code>{example}</code>',
+  ],
+  'daily.moveCompleted': [
+    'Сначала верните пункт в работу.',
+    'Спочатку поверніть пункт у роботу.',
+    'Mark the item incomplete before moving it.',
+  ],
+  'daily.moveSameDate': [
+    'Пункт уже находится на этой дате.',
+    'Пункт уже знаходиться на цій даті.',
+    'The item is already on that date.',
+  ],
+  'daily.movePastDate': [
+    'Пункт нельзя перенести в прошедший день.',
+    'Пункт не можна перенести в минулий день.',
+    'The item cannot be moved to a past day.',
+  ],
+  'daily.moveSuccessTitle': ['✅ Пункт перенесён', '✅ Пункт перенесено', '✅ Item moved'],
+  'daily.moveSuccessDates': [
+    'Из: {sourceDate}\nВ: {targetDate}',
+    'З: {sourceDate}\nНа: {targetDate}',
+    'From: {sourceDate}\nTo: {targetDate}',
+  ],
+  'daily.openMovedPlan': ['📅 Открыть новую дату', '📅 Відкрити нову дату', '📅 Open new date'],
   'daily.backToManagement': ['⬅️ К списку пунктов', '⬅️ До списку пунктів', '⬅️ Back to items'],
   'daily.noItems': [
     'В плане нет пунктов.',

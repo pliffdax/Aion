@@ -474,6 +474,22 @@ export type ToggleTelegramDailyPlanItemDto = z.infer<typeof ToggleTelegramDailyP
 export const DeleteTelegramDailyPlanItemDtoSchema = ToggleTelegramDailyPlanItemDtoSchema;
 export type DeleteTelegramDailyPlanItemDto = z.infer<typeof DeleteTelegramDailyPlanItemDtoSchema>;
 
+export const MoveTelegramDailyPlanItemDtoSchema = ToggleTelegramDailyPlanItemDtoSchema.extend({
+  targetDate: TelegramPlanDateSchema,
+}).refine(dto => dto.targetDate !== dto.date, {
+  message: 'Target date must differ from source date',
+  path: ['targetDate'],
+});
+export type MoveTelegramDailyPlanItemDto = z.infer<typeof MoveTelegramDailyPlanItemDtoSchema>;
+
+export const MoveTelegramDailyPlanItemResultDtoSchema = z.object({
+  sourcePlan: TelegramDailyPlanDtoSchema,
+  targetPlan: TelegramDailyPlanDtoSchema,
+});
+export type MoveTelegramDailyPlanItemResultDto = z.infer<
+  typeof MoveTelegramDailyPlanItemResultDtoSchema
+>;
+
 export const ClearCompletedTelegramDailyPlanItemsDtoSchema = GetOrCreateTelegramDailyPlanDtoSchema;
 export type ClearCompletedTelegramDailyPlanItemsDto = z.infer<
   typeof ClearCompletedTelegramDailyPlanItemsDtoSchema
