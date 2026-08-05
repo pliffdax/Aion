@@ -18,7 +18,8 @@
     "format": "pnpm -r format",
     "format:check": "pnpm -r format:check",
     "typecheck": "pnpm db:generate && pnpm build:contracts && pnpm -r typecheck",
-    "quality": "pnpm lint && pnpm typecheck && pnpm build",
+    "quality": "pnpm lint && pnpm typecheck && pnpm build && pnpm quality:dupes && pnpm quality:ai",
+    "quality:ai": "pnpm exec fallow audit --base origin/main || true",
     "quality:dupes": "pnpm exec fallow dupes --mode semantic"
   },
   "devDependencies": {

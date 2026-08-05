@@ -674,6 +674,14 @@ test('keeps hidden completed items in management and can return them to work', a
       message: managementMessage,
     },
   });
+  const completedItemPanel = [...apiCalls]
+    .reverse()
+    .find(call => call.method === 'editMessageText' && call.payload.message_id === 200);
+  assert.equal(
+    String(JSON.stringify(completedItemPanel?.payload.reply_markup)).includes('dp:mv:'),
+    false,
+  );
+
   await bot.handleUpdate({
     update_id: 23,
     callback_query: {
@@ -694,6 +702,169 @@ test('keeps hidden completed items in management and can return them to work', a
         call.method === 'editMessageText' &&
         call.payload.message_id === 30 &&
         String(call.payload.text).includes(completedItem.text),
+    ),
+    true,
+  );
+});
+
+test('moves an item to another date from its copyable management panel', async () => {
+  const userId = 987654325;
+  setLocale(userId, 'ru');
+  const tomorrow = shiftDateKey(today, 1);
+  const sourceItem = { ...plan.items[0]!, description: 'Описание сохраняется' };
+  let sourcePlan: v1.TelegramDailyPlanDto = {
+    ...plan,
+    telegramUserId: String(userId),
+    items: [sourceItem],
+  };
+  let targetPlan: v1.TelegramDailyPlanDto = {
+    ...plan,
+    id: 'cm0000000000000000000009',
+    telegramUserId: String(userId),
+    date: tomorrow,
+    items: [],
+  };
+  const moveCalls: Array<{ date: string; itemId: string; targetDate: string }> = [];
+  const apiCalls: { method: string; payload: Record<string, unknown> }[] = [];
+  const bot = new Bot('123456:test-token', {
+    botInfo: {
+      id: 123456,
+      is_bot: true,
+      first_name: 'Aion Test',
+      username: 'aion_test_bot',
+      can_join_groups: false,
+      can_read_all_group_messages: false,
+      supports_inline_queries: false,
+      can_connect_to_business: false,
+      has_main_web_app: false,
+      has_topics_enabled: false,
+      allows_users_to_create_topics: false,
+      can_manage_bots: false,
+      supports_join_request_queries: false,
+    },
+  });
+  bot.api.config.use(async (_previous, method, payload) => {
+    apiCalls.push({ method, payload: payload as Record<string, unknown> });
+
+    if (method === 'editMessageText') {
+      const messagePayload = payload as { message_id?: number; text?: string };
+      return {
+        ok: true,
+        result: {
+          message_id: Number(messagePayload.message_id),
+          date: 0,
+          chat: { id: userId, type: 'private', first_name: 'Test' },
+          text: String(messagePayload.text),
+        },
+      } as never;
+    }
+
+    return { ok: true, result: true } as never;
+  });
+  registerDailyPlanHandlers(bot, {
+    getOrCreateDailyPlan: async (_userId: number, date: string) =>
+      date === sourcePlan.date ? sourcePlan : targetPlan,
+    moveDailyPlanItem: async (
+      _userId: number,
+      date: string,
+      itemId: string,
+      targetDate: string,
+    ): Promise<v1.MoveTelegramDailyPlanItemResultDto> => {
+      moveCalls.push({ date, itemId, targetDate });
+      sourcePlan = { ...sourcePlan, items: [] };
+      targetPlan = {
+        ...targetPlan,
+        items: [{ ...sourceItem, position: targetPlan.items.length }],
+      };
+      return { sourcePlan, targetPlan };
+    },
+  } as unknown as AionApiClient);
+
+  const managementMessage = {
+    message_id: 300,
+    date: 0,
+    chat: { id: userId, type: 'private' as const, first_name: 'Test' },
+    text: 'management',
+  };
+
+  await bot.handleUpdate({
+    update_id: 40,
+    callback_query: {
+      id: 'open-item-to-move',
+      from: { id: userId, is_bot: false, first_name: 'Test' },
+      chat_instance: 'test-chat',
+      data: `dp:i:${today}:${sourceItem.id}`,
+      message: managementMessage,
+    },
+  });
+  assert.equal(
+    apiCalls.some(call =>
+      String(JSON.stringify(call.payload.reply_markup)).includes(`dp:mv:${today}`),
+    ),
+    true,
+  );
+
+  await bot.handleUpdate({
+    update_id: 41,
+    callback_query: {
+      id: 'start-moving-item',
+      from: { id: userId, is_bot: false, first_name: 'Test' },
+      chat_instance: 'test-chat',
+      data: `dp:mv:${today}:${sourceItem.id}`,
+      message: managementMessage,
+    },
+  });
+
+  const movePrompt = [...apiCalls]
+    .reverse()
+    .find(call => call.method === 'editMessageText' && call.payload.message_id === 300);
+  assert.match(String(movePrompt?.payload.text), new RegExp(`<pre>${sourceItem.text}</pre>`));
+  assert.match(JSON.stringify(movePrompt?.payload.reply_markup), /"copy_text"/);
+  assert.match(JSON.stringify(movePrompt?.payload.reply_markup), new RegExp(`dp:mq:${today}`));
+
+  await bot.handleUpdate({
+    update_id: 42,
+    message: {
+      message_id: 301,
+      date: 0,
+      chat: { id: userId, type: 'private', first_name: 'Test' },
+      from: { id: userId, is_bot: false, first_name: 'Test' },
+      text: '31.02.2026',
+    },
+  });
+  assert.equal(moveCalls.length, 0);
+  assert.equal(
+    apiCalls.some(
+      call =>
+        call.method === 'editMessageText' &&
+        call.payload.message_id === 300 &&
+        String(call.payload.text).includes('Не удалось распознать дату'),
+    ),
+    true,
+  );
+
+  await bot.handleUpdate({
+    update_id: 43,
+    callback_query: {
+      id: 'move-item-tomorrow',
+      from: { id: userId, is_bot: false, first_name: 'Test' },
+      chat_instance: 'test-chat',
+      data: `dp:mq:${today}:${sourceItem.id}:${tomorrow}`,
+      message: managementMessage,
+    },
+  });
+
+  assert.deepEqual(moveCalls, [{ date: today, itemId: sourceItem.id, targetDate: tomorrow }]);
+  assert.equal(sourcePlan.items.length, 0);
+  assert.equal(targetPlan.items[0]?.id, sourceItem.id);
+  assert.equal(targetPlan.items[0]?.description, sourceItem.description);
+  assert.equal(
+    apiCalls.some(
+      call =>
+        call.method === 'editMessageText' &&
+        call.payload.message_id === 300 &&
+        String(call.payload.text).includes('Пункт перенесён') &&
+        JSON.stringify(call.payload.reply_markup).includes(`dp:mo:${tomorrow}`),
     ),
     true,
   );
