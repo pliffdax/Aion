@@ -1,0 +1,2 @@
+ALTER TABLE "TelegramUser"
+ALTER COLUMN "locale" SET DEFAULT 'UK';

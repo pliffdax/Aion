@@ -3,7 +3,7 @@ model TelegramUser {
   telegramId           BigInt         @unique
   username             String?        @db.VarChar(32)
   firstName            String?        @db.VarChar(64)
-  locale               TelegramLocale @default(RU)
+  locale               TelegramLocale @default(UK)
   reportAuthorName     String?        @db.VarChar(100)
   reportStartDate      DateTime?      @db.Date
   reportDailySections  Json

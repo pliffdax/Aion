@@ -3,7 +3,7 @@ import test from 'node:test';
 import { v1 } from '@aion/contracts';
 import { Bot } from 'grammy';
 import type { AionApiClient } from '../../core/api/aion-api-client.js';
-import { translate } from '../../core/i18n/i18n.js';
+import { setLocale, translate } from '../../core/i18n/i18n.js';
 import {
   currentKyivDateKey,
   parseDateKeyInput,
@@ -34,6 +34,8 @@ const plan: v1.TelegramDailyPlanDto = {
     },
   ],
 };
+
+setLocale(Number(plan.telegramUserId), 'ru');
 
 test('keeps descriptions out of the main daily plan panel', () => {
   const rendered = renderPlan(plan);
@@ -111,6 +113,7 @@ test('renders the plan date prompt with the shared copyable format and example s
 
 test('adds a plan item to the date encoded in the opened panel', async () => {
   const userId = 987654324;
+  setLocale(userId, 'ru');
   const tomorrow = shiftDateKey(today, 1);
   const addedDates: string[] = [];
   let nextMessageId = 100;
@@ -250,6 +253,7 @@ test('validates optional daily plan descriptions at the API boundary', () => {
 
 test('deletes an oversized item message and reuses the existing prompt', async () => {
   const userId = 987654321;
+  setLocale(userId, 'ru');
   const apiCalls: { method: string; payload: Record<string, unknown> }[] = [];
   let nextMessageId = 100;
   const bot = new Bot('123456:test-token', {
@@ -356,6 +360,7 @@ test('deletes an oversized item message and reuses the existing prompt', async (
 
 test('keeps description editing in the selected item card', async () => {
   const userId = 987654322;
+  setLocale(userId, 'ru');
   const item = { ...plan.items[0]!, description: 'Старое описание' };
   let currentPlan: v1.TelegramDailyPlanDto = {
     ...plan,
@@ -488,6 +493,7 @@ test('keeps description editing in the selected item card', async () => {
 
 test('keeps hidden completed items in management and can return them to work', async () => {
   const userId = 987654323;
+  setLocale(userId, 'ru');
   const completedItem: v1.TelegramDailyPlanItemDto = {
     id: 'cm0000000000000000000002',
     text: 'Скрытая выполненная задача',
