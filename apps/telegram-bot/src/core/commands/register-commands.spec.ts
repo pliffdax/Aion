@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Command } from './command.js';
 import { visibleCommands } from './register-commands.js';
+import { getLocale } from '../i18n/i18n.js';
 import { command as pingCommand } from '../../features/ping/ping.command.js';
 import { renderWelcome } from '../../features/start/start.command.js';
 import { command as whoamiCommand } from '../../features/whoami/whoami.command.js';
@@ -47,4 +48,9 @@ test('renders the welcome with the commands visible to the current user', () => 
   assert.doesNotMatch(regularWelcome, /\/whoami/);
   assert.match(ownerWelcome, /\/ping/);
   assert.match(ownerWelcome, /\/whoami/);
+});
+
+test('uses Ukrainian for users without a saved locale', () => {
+  assert.equal(getLocale(8_888_888_888), 'uk');
+  assert.equal(getLocale(undefined), 'uk');
 });
