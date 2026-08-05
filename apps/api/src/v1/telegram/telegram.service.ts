@@ -445,6 +445,62 @@ export class TelegramService {
     return toDailyPlanDto(plan);
   }
 
+  async moveDailyPlanItem(
+    dto: v1.MoveTelegramDailyPlanItemDto,
+  ): Promise<v1.MoveTelegramDailyPlanItemResultDto> {
+    if (dto.targetDate === dto.date) {
+      throw new BadRequestException('Target date must differ from source date');
+    }
+
+    const today = currentKyivDateKey();
+    if (dto.date < today || dto.targetDate < today) {
+      throw new BadRequestException('Daily plan items can only be moved between editable dates');
+    }
+
+    const result = await this.prisma.$transaction(async transaction => {
+      const item = await findOwnedItem(transaction, dto);
+      const sourcePlanId = item.dailyPlanId;
+
+      if (item.completed) {
+        throw new ConflictException('Completed daily plan items must be reopened before moving');
+      }
+
+      const targetPlan = await upsertDailyPlan(transaction, {
+        telegramUserId: dto.telegramUserId,
+        date: dto.targetDate,
+      });
+      const aggregate = await transaction.dailyPlanItem.aggregate({
+        where: { dailyPlanId: targetPlan.id },
+        _count: true,
+        _max: { position: true },
+      });
+
+      if (aggregate._count >= maxDailyPlanItems) {
+        throw new BadRequestException(`Daily plan supports at most ${maxDailyPlanItems} items`);
+      }
+
+      await transaction.dailyPlanItem.update({
+        where: { id: item.id },
+        data: {
+          dailyPlanId: targetPlan.id,
+          position: (aggregate._max.position ?? -1) + 1,
+        },
+      });
+
+      const [sourcePlan, updatedTargetPlan] = await Promise.all([
+        findDailyPlan(transaction, sourcePlanId),
+        findDailyPlan(transaction, targetPlan.id),
+      ]);
+
+      return {
+        sourcePlan: toDailyPlanDto(sourcePlan),
+        targetPlan: toDailyPlanDto(updatedTargetPlan),
+      };
+    });
+
+    return result;
+  }
+
   async clearCompletedDailyPlanItems(
     dto: v1.ClearCompletedTelegramDailyPlanItemsDto,
   ): Promise<v1.TelegramDailyPlanDto> {
@@ -818,6 +874,15 @@ function findDailyPlan(database: DatabaseClient, planId: string): Promise<DailyP
     where: { id: planId },
     ...planWithItems,
   });
+}
+
+function currentKyivDateKey(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Kyiv',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 }
 
 async function findOwnedItem(database: DatabaseClient, dto: v1.ToggleTelegramDailyPlanItemDto) {

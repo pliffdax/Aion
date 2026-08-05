@@ -188,6 +188,25 @@ export class AionApiClient {
     });
   }
 
+  moveDailyPlanItem(
+    telegramUserId: number,
+    date: string,
+    itemId: string,
+    targetDate: string,
+  ): Promise<v1.MoveTelegramDailyPlanItemResultDto> {
+    return this.request(
+      '/telegram/daily-plans/items/move',
+      v1.MoveTelegramDailyPlanItemResultDtoSchema,
+      'POST',
+      {
+        telegramUserId: String(telegramUserId),
+        date,
+        itemId,
+        targetDate,
+      },
+    );
+  }
+
   clearCompletedDailyPlanItems(
     telegramUserId: number,
     date: string,

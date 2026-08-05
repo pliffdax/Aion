@@ -21,6 +21,7 @@ import {
   shiftDateKey,
 } from '../../core/time/kyiv-calendar.js';
 import { isTelegramMessageNotModified } from '../../core/telegram-errors.js';
+import { registerDailyPlanMoveHandlers, type MovePendingInput } from './plan-move.js';
 
 const timeZone = kyivTimeZone;
 const maxItems = 20;
@@ -87,7 +88,8 @@ type PendingInput =
       itemId: string;
       currentValue: string | null;
       prompt: MessageReference;
-    };
+    }
+  | MovePendingInput;
 
 interface DailyPlanInteractionState {
   ownerId: number;
@@ -124,6 +126,22 @@ let registeredApiClient: AionApiClient | null = null;
 
 export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): void {
   registeredApiClient = apiClient;
+
+  registerDailyPlanMoveHandlers(bot, apiClient, {
+    stateForOwner,
+    ownerId: state => state.ownerId,
+    pendingMove: state => (state.pendingInput?.kind === 'move-date' ? state.pendingInput : null),
+    setPendingMove: (state, pendingInput) => {
+      state.pendingInput = pendingInput;
+    },
+    setManagementMessage: (state, message, date) => {
+      state.managementMessage = message && date ? { ...message, date } : null;
+    },
+    refreshManagementMessage,
+    refreshPlanPanel,
+    restoreItemPanel,
+    showSelectedPlan,
+  });
 
   bot.callbackQuery(openDateCallbackPattern, async context => {
     const state = stateForOwner(context.from.id);
@@ -727,6 +745,12 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
     const text = context.message.text.trim();
     const pendingInput = state.pendingInput;
 
+    // Move input is consumed by the focused handler registered before this general form handler.
+    if (pendingInput.kind === 'move-date') {
+      await next();
+      return;
+    }
+
     if (pendingInput.kind === 'select-date') {
       const date = parseDateKeyInput(text);
       await context.deleteMessage().catch(() => undefined);
@@ -924,6 +948,28 @@ async function showSelectedPlan(
   await showUpdatedPlan(context, state, plan);
 }
 
+async function restoreItemPanel(
+  context: Context,
+  plan: v1.TelegramDailyPlanDto,
+  itemId: string,
+): Promise<void> {
+  const locale = getLocale(Number(plan.telegramUserId));
+  const item = plan.items.find(candidate => candidate.id === itemId);
+
+  if (!item) {
+    await context.editMessageText(renderManagement(plan), {
+      parse_mode: 'HTML',
+      reply_markup: buildManagementKeyboard(plan),
+    });
+    return;
+  }
+
+  await context.editMessageText(renderItemDetails(locale, plan, item), {
+    parse_mode: 'HTML',
+    reply_markup: buildItemDetailsKeyboard(locale, plan.date, item),
+  });
+}
+
 async function showUpdatedPlan(
   context: Context,
   state: DailyPlanInteractionState,
@@ -946,7 +992,10 @@ async function showUpdatedPlan(
 async function showInputError(
   telegramApi: TelegramApi,
   locale: ReturnType<typeof getLocale>,
-  pendingInput: Exclude<PendingInput, { kind: 'add-description-choice' } | { kind: 'select-date' }>,
+  pendingInput: Exclude<
+    PendingInput,
+    { kind: 'add-description-choice' } | { kind: 'select-date' } | { kind: 'move-date' }
+  >,
   error: string,
 ): Promise<void> {
   const instruction =
@@ -1312,6 +1361,10 @@ function buildItemDetailsKeyboard(
 
   if (item.description) {
     keyboard.text(translate(locale, 'daily.clearDescription'), `dp:cd:${date}:${item.id}`).row();
+  }
+
+  if (!item.completed) {
+    keyboard.text(translate(locale, 'daily.move'), `dp:mv:${date}:${item.id}`).row();
   }
 
   return keyboard

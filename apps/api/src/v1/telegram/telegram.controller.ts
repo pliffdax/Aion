@@ -122,6 +122,11 @@ export class TelegramController {
     );
   }
 
+  @Post('daily-plans/items/move')
+  moveDailyPlanItem(@Body() body: unknown) {
+    return this.telegram.moveDailyPlanItem(parseBody(v1.MoveTelegramDailyPlanItemDtoSchema, body));
+  }
+
   @Delete('daily-plans/completed')
   clearCompletedDailyPlanItems(@Body() body: unknown) {
     return this.telegram.clearCompletedDailyPlanItems(
