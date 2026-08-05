@@ -1,5 +1,9 @@
 import { v1 } from '@aion/contracts';
 import { InlineKeyboard } from 'grammy';
+import {
+  addCopyCurrentTextButton,
+  renderCopyableText,
+} from '../../core/formatting/copyable-text.js';
 import { escapeHtml } from '../../core/formatting/html.js';
 import { getLocale, translate, type Locale, type TranslationKey } from '../../core/i18n/i18n.js';
 import type { ReportCalendar, ReportItem } from './report.formatter.js';
@@ -301,11 +305,28 @@ export function buildReportFieldEditorKeyboard(locale: Locale, field: ReportFiel
     .text(translate(locale, 'report.close'), 'report:setup:cancel');
 }
 
-export function buildReportFieldTextInputKeyboard(locale: Locale): InlineKeyboard {
-  return new InlineKeyboard()
+export function buildReportFieldTextInputKeyboard(
+  locale: Locale,
+  currentValue: string,
+): InlineKeyboard {
+  return addCopyCurrentTextButton(new InlineKeyboard(), locale, currentValue)
     .text(translate(locale, 'report.back'), 'report:field:editor-back')
     .row()
     .text(translate(locale, 'report.close'), 'report:setup:cancel');
+}
+
+export function renderReportFieldTextPrompt(
+  locale: Locale,
+  field: ReportField,
+  target: 'title' | 'prompt',
+): string {
+  const instruction = translate(
+    locale,
+    target === 'title' ? 'report.fieldTitlePrompt' : 'report.fieldPromptPrompt',
+  );
+  const currentValue = target === 'title' ? field.title : field.prompt;
+
+  return currentValue ? `${instruction}\n\n${renderCopyableText(currentValue)}` : instruction;
 }
 
 export function renderCollector(session: ReportSession): string {
@@ -330,7 +351,7 @@ export function buildCollectorKeyboard(session: ReportSession): InlineKeyboard {
   const locale = getLocale(session.userId);
 
   if (!session.type) return buildTypeKeyboard(locale);
-  if (session.editingItemId !== null) return buildEditingKeyboard(locale);
+  if (session.editingItemId !== null) return buildEditingKeyboard(session, locale);
   if (isListStep(session)) return buildListKeyboard(session, locale);
   if (isTextStep(session)) return buildTextKeyboard(session, locale);
   if (isRatingStep(session)) return buildRatingKeyboard(session, locale);
@@ -390,7 +411,7 @@ function renderEditingItem(session: ReportSession, locale: Locale): string[] {
   return [
     translate(locale, 'report.editingItem', { number: index + 1 }),
     '',
-    item ? `<i>${escapeHtml(item.text)}</i>` : '',
+    item ? renderCopyableText(item.text) : '',
   ];
 }
 
@@ -402,7 +423,7 @@ function renderList(session: ReportSession): string[] {
 
 function renderText(session: ReportSession): string[] {
   const value = currentText(session);
-  return [value ? escapeHtml(value) : '—'];
+  return [value ? renderCopyableText(value) : '—'];
 }
 
 function renderCollectorItems(items: ReportItem[], showStatus: boolean): string[] {
@@ -414,8 +435,12 @@ function renderCollectorItems(items: ReportItem[], showStatus: boolean): string[
   });
 }
 
-function buildEditingKeyboard(locale: Locale): InlineKeyboard {
-  return new InlineKeyboard()
+function buildEditingKeyboard(session: ReportSession, locale: Locale): InlineKeyboard {
+  const item = (currentItems(session) ?? []).find(
+    candidate => candidate.id === session.editingItemId,
+  );
+
+  return addCopyCurrentTextButton(new InlineKeyboard(), locale, item?.text)
     .text(translate(locale, 'report.back'), 'report:edit-cancel')
     .row()
     .text(translate(locale, 'report.cancel'), 'report:cancel');
@@ -465,8 +490,8 @@ function addItemButtons(
 }
 
 function buildTextKeyboard(session: ReportSession, locale: Locale): InlineKeyboard {
-  const keyboard = new InlineKeyboard();
   const value = currentText(session);
+  const keyboard = addCopyCurrentTextButton(new InlineKeyboard(), locale, value);
   const field = currentField(session);
 
   if (value || field?.required === false) {
