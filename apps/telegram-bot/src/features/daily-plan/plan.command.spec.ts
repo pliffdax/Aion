@@ -444,6 +444,37 @@ test('keeps description editing in the selected item card', async () => {
   await bot.handleUpdate({
     update_id: 11,
     callback_query: {
+      id: 'edit-title',
+      from: { id: userId, is_bot: false, first_name: 'Test' },
+      chat_instance: 'test-chat',
+      data: `daily-plan:edit:${item.id}`,
+      message: callbackMessage,
+    },
+  });
+
+  assert.equal(
+    apiCalls.some(
+      call =>
+        call.method === 'editMessageText' &&
+        String(call.payload.text).includes(`<pre>${item.text}</pre>`) &&
+        JSON.stringify(call.payload.reply_markup).includes(`"copy_text":{"text":"${item.text}"}`),
+    ),
+    true,
+  );
+
+  await bot.handleUpdate({
+    update_id: 12,
+    callback_query: {
+      id: 'cancel-title-edit',
+      from: { id: userId, is_bot: false, first_name: 'Test' },
+      chat_instance: 'test-chat',
+      data: 'daily-plan:cancel-edit',
+      message: callbackMessage,
+    },
+  });
+  await bot.handleUpdate({
+    update_id: 13,
+    callback_query: {
       id: 'edit-description',
       from: { id: userId, is_bot: false, first_name: 'Test' },
       chat_instance: 'test-chat',
@@ -458,14 +489,18 @@ test('keeps description editing in the selected item card', async () => {
         call.method === 'editMessageText' &&
         call.payload.message_id === 20 &&
         String(call.payload.text).includes('2000') &&
-        String(call.payload.text).includes('не отображается'),
+        String(call.payload.text).includes('не отображается') &&
+        String(call.payload.text).includes('<pre>Старое описание</pre>') &&
+        JSON.stringify(call.payload.reply_markup).includes(
+          '"copy_text":{"text":"Старое описание"}',
+        ),
     ),
     true,
   );
 
   const callsBeforeDescription = apiCalls.length;
   await bot.handleUpdate({
-    update_id: 12,
+    update_id: 14,
     message: {
       message_id: 21,
       date: 0,

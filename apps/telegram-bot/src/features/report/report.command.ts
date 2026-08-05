@@ -78,6 +78,7 @@ import {
   renderExistingReportMenu,
   renderReportHistory,
   renderReportFieldEditor,
+  renderReportFieldTextPrompt,
   renderReportSectionConfiguration,
   renderReportSettings,
   renderCollector,
@@ -1804,14 +1805,17 @@ async function showReportFieldTextPrompt(
   setup.step = step;
   claimTextInput(setup.userId, 'report');
   const locale = getLocale(setup.userId);
+  const field = editingSetupField(setup);
+  if (!field) throw new Error('A report field is required for text editing');
+  const currentValue = step === 'field-title' ? field.title : field.prompt;
   await telegramApi.editMessageText(
     setup.collector.chatId,
     setup.collector.messageId,
-    translate(
-      locale,
-      step === 'field-title' ? 'report.fieldTitlePrompt' : 'report.fieldPromptPrompt',
-    ),
-    { parse_mode: 'HTML', reply_markup: buildReportFieldTextInputKeyboard(locale) },
+    renderReportFieldTextPrompt(locale, field, step === 'field-title' ? 'title' : 'prompt'),
+    {
+      parse_mode: 'HTML',
+      reply_markup: buildReportFieldTextInputKeyboard(locale, currentValue),
+    },
   );
 }
 

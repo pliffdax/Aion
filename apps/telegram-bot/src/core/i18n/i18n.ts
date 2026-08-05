@@ -9,6 +9,11 @@ const localesByUserId = new Map<number, Locale>();
 const localeIndexes: Record<Locale, 0 | 1 | 2> = { ru: 0, uk: 1, en: 2 };
 
 const translations = {
+  'common.copyCurrentText': [
+    '📋 Скопировать текущий текст',
+    '📋 Скопіювати поточний текст',
+    '📋 Copy current text',
+  ],
   'access.closed': [
     'Доступ к боту пока закрыт.',
     'Доступ до бота поки закритий.',
