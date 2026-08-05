@@ -7,3 +7,5 @@
 - Commit forward-compatible Prisma migrations with the code that needs them.
 - Do not reset databases or run destructive migrations without explicit approval.
 - Before handoff run `pnpm lint`, `pnpm typecheck`, and `pnpm build`.
+- Run `pnpm quality:dupes` when changing architecture or adding shared helpers, services, hooks, or utilities.
+- Use `pnpm quality:ai` to audit changed files for dead code, complexity, and duplication.
