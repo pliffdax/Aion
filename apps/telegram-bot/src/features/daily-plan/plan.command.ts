@@ -74,6 +74,12 @@ type PendingInput =
   | { kind: 'select-date'; date: string; prompt: MessageReference }
   | { kind: 'add-title'; date: string; prompt: MessageReference }
   | { kind: 'add-description-choice'; date: string; text: string; prompt: MessageReference }
+  | {
+      kind: 'edit-draft-title';
+      date: string;
+      currentValue: string;
+      prompt: MessageReference;
+    }
   | { kind: 'add-description'; date: string; text: string; prompt: MessageReference }
   | {
       kind: 'edit-title';
@@ -358,23 +364,8 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
   bot.callbackQuery('daily-plan:add-description', async context => {
     const state = stateForOwner(context.from.id);
     const locale = getLocale(state.ownerId);
-    const pendingInput = state.pendingInput;
-
-    if (
-      pendingInput?.kind !== 'add-description-choice' ||
-      !isPromptCallback(pendingInput, context.callbackQuery.message?.message_id)
-    ) {
-      await context.answerCallbackQuery(translate(locale, 'daily.actionExpired'));
-      return;
-    }
-
-    if (!isEditablePlanDate(pendingInput.date)) {
-      state.pendingInput = null;
-      releaseTextInput(state.ownerId, 'daily-plan');
-      await context.answerCallbackQuery(translate(locale, 'daily.readOnlyAction'));
-      await context.deleteMessage().catch(() => undefined);
-      return;
-    }
+    const pendingInput = await editableDescriptionChoice(context, state);
+    if (!pendingInput) return;
 
     state.pendingInput = {
       kind: 'add-description',
@@ -397,6 +388,14 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
       },
     );
   });
+
+  bot.callbackQuery('daily-plan:edit-draft-title', context =>
+    startDraftTitleEdit(context, stateForOwner(context.from.id)),
+  );
+
+  bot.callbackQuery('daily-plan:cancel-draft-title-edit', context =>
+    cancelDraftTitleEdit(context, stateForOwner(context.from.id)),
+  );
 
   bot.callbackQuery('daily-plan:add-without-description', async context => {
     const state = stateForOwner(context.from.id);
@@ -822,7 +821,7 @@ export function registerDailyPlanHandlers(bot: Bot, apiClient: AionApiClient): v
 
     await context.deleteMessage().catch(() => undefined);
 
-    if (pendingInput.kind === 'add-title') {
+    if (pendingInput.kind === 'add-title' || pendingInput.kind === 'edit-draft-title') {
       const promptText = renderDescriptionChoice(locale, text, pendingInput.date);
       const replyMarkup = buildDescriptionChoiceKeyboard(locale);
       const prompt = await context.api
@@ -989,6 +988,99 @@ async function showUpdatedPlan(
   await refreshManagementMessage(context.api, state, plan);
 }
 
+async function startDraftTitleEdit(
+  context: Context,
+  state: DailyPlanInteractionState,
+): Promise<void> {
+  const locale = getLocale(state.ownerId);
+  const pendingInput = await editableDescriptionChoice(context, state);
+  if (!pendingInput) return;
+
+  state.pendingInput = {
+    kind: 'edit-draft-title',
+    date: pendingInput.date,
+    currentValue: pendingInput.text,
+    prompt: pendingInput.prompt,
+  };
+  claimTextInput(state.ownerId, 'daily-plan');
+  await context.answerCallbackQuery();
+  await context.editMessageText(
+    [
+      translate(locale, 'daily.dateLabel', {
+        date: formatPlanDate(pendingInput.date, locale),
+      }),
+      '',
+      translate(locale, 'daily.editPrompt', { max: maxItemLength }),
+      '',
+      renderCopyableText(pendingInput.text),
+    ].join('\n'),
+    {
+      parse_mode: 'HTML',
+      reply_markup: buildEditInputKeyboard(
+        locale,
+        pendingInput.text,
+        'daily-plan:cancel-draft-title-edit',
+      ),
+    },
+  );
+}
+
+async function editableDescriptionChoice(
+  context: Context,
+  state: DailyPlanInteractionState,
+): Promise<Extract<PendingInput, { kind: 'add-description-choice' }> | null> {
+  const locale = getLocale(state.ownerId);
+  const pendingInput = state.pendingInput;
+
+  if (
+    pendingInput?.kind !== 'add-description-choice' ||
+    !isPromptCallback(pendingInput, context.callbackQuery?.message?.message_id)
+  ) {
+    await context.answerCallbackQuery(translate(locale, 'daily.actionExpired'));
+    return null;
+  }
+
+  if (isEditablePlanDate(pendingInput.date)) return pendingInput;
+
+  state.pendingInput = null;
+  releaseTextInput(state.ownerId, 'daily-plan');
+  await context.answerCallbackQuery(translate(locale, 'daily.readOnlyAction'));
+  await context.deleteMessage().catch(() => undefined);
+  return null;
+}
+
+async function cancelDraftTitleEdit(
+  context: Context,
+  state: DailyPlanInteractionState,
+): Promise<void> {
+  const locale = getLocale(state.ownerId);
+  const pendingInput = state.pendingInput;
+
+  if (
+    pendingInput?.kind !== 'edit-draft-title' ||
+    !isPromptCallback(pendingInput, context.callbackQuery?.message?.message_id)
+  ) {
+    await context.answerCallbackQuery(translate(locale, 'daily.actionExpired'));
+    return;
+  }
+
+  state.pendingInput = {
+    kind: 'add-description-choice',
+    date: pendingInput.date,
+    text: pendingInput.currentValue,
+    prompt: pendingInput.prompt,
+  };
+  releaseTextInput(state.ownerId, 'daily-plan');
+  await context.answerCallbackQuery(translate(locale, 'daily.cancelled'));
+  await context.editMessageText(
+    renderDescriptionChoice(locale, pendingInput.currentValue, pendingInput.date),
+    {
+      parse_mode: 'HTML',
+      reply_markup: buildDescriptionChoiceKeyboard(locale),
+    },
+  );
+}
+
 async function showInputError(
   telegramApi: TelegramApi,
   locale: ReturnType<typeof getLocale>,
@@ -998,15 +1090,7 @@ async function showInputError(
   >,
   error: string,
 ): Promise<void> {
-  const instruction =
-    pendingInput.kind === 'add-title'
-      ? translate(locale, 'daily.addPrompt', {
-          date: formatPlanDate(pendingInput.date, locale),
-          max: maxItemLength,
-        })
-      : pendingInput.kind === 'edit-title'
-        ? translate(locale, 'daily.editPrompt', { max: maxItemLength })
-        : translate(locale, 'daily.descriptionPrompt', { max: maxDescriptionLength });
+  const instruction = renderInputInstruction(locale, pendingInput);
   const datedInstruction = [
     translate(locale, 'daily.dateLabel', {
       date: formatPlanDate(pendingInput.date, locale),
@@ -1014,15 +1098,13 @@ async function showInputError(
     '',
     instruction,
   ].join('\n');
-  const replyMarkup =
-    pendingInput.kind === 'edit-description' || pendingInput.kind === 'edit-title'
-      ? buildEditInputKeyboard(locale, pendingInput.currentValue)
-      : buildCancelKeyboard(locale);
-  const currentValue =
-    (pendingInput.kind === 'edit-description' || pendingInput.kind === 'edit-title') &&
-    pendingInput.currentValue
-      ? `\n\n${renderCopyableText(pendingInput.currentValue)}`
-      : '';
+  const editInput = editInputDetails(pendingInput);
+  const replyMarkup = editInput
+    ? buildEditInputKeyboard(locale, editInput.currentValue, editInput.cancelCallback)
+    : buildCancelKeyboard(locale);
+  const currentValue = editInput?.currentValue
+    ? `\n\n${renderCopyableText(editInput.currentValue)}`
+    : '';
 
   await telegramApi.editMessageText(
     pendingInput.prompt.chatId,
@@ -1030,6 +1112,47 @@ async function showInputError(
     `${error}\n\n${datedInstruction}${currentValue}`,
     { parse_mode: 'HTML', reply_markup: replyMarkup },
   );
+}
+
+function renderInputInstruction(
+  locale: ReturnType<typeof getLocale>,
+  pendingInput: Exclude<
+    PendingInput,
+    { kind: 'add-description-choice' } | { kind: 'select-date' } | { kind: 'move-date' }
+  >,
+): string {
+  if (pendingInput.kind === 'add-title') {
+    return translate(locale, 'daily.addPrompt', {
+      date: formatPlanDate(pendingInput.date, locale),
+      max: maxItemLength,
+    });
+  }
+
+  if (pendingInput.kind === 'edit-title' || pendingInput.kind === 'edit-draft-title') {
+    return translate(locale, 'daily.editPrompt', { max: maxItemLength });
+  }
+
+  return translate(locale, 'daily.descriptionPrompt', { max: maxDescriptionLength });
+}
+
+function editInputDetails(
+  pendingInput: Exclude<
+    PendingInput,
+    { kind: 'add-description-choice' } | { kind: 'select-date' } | { kind: 'move-date' }
+  >,
+): { currentValue: string | null; cancelCallback: string } | null {
+  if (pendingInput.kind === 'edit-draft-title') {
+    return {
+      currentValue: pendingInput.currentValue,
+      cancelCallback: 'daily-plan:cancel-draft-title-edit',
+    };
+  }
+
+  if (pendingInput.kind === 'edit-description' || pendingInput.kind === 'edit-title') {
+    return { currentValue: pendingInput.currentValue, cancelCallback: 'daily-plan:cancel-edit' };
+  }
+
+  return null;
 }
 
 function acceptsTextInput(
@@ -1320,6 +1443,8 @@ function buildDescriptionChoiceKeyboard(locale: ReturnType<typeof getLocale>): I
     .text(translate(locale, 'daily.addDescription'), 'daily-plan:add-description')
     .text(translate(locale, 'daily.withoutDescription'), 'daily-plan:add-without-description')
     .row()
+    .text(translate(locale, 'daily.editTitle'), 'daily-plan:edit-draft-title')
+    .row()
     .text(translate(locale, 'daily.cancel'), 'daily-plan:cancel-input');
 }
 
@@ -1337,10 +1462,11 @@ function buildDateChoiceKeyboard(locale: ReturnType<typeof getLocale>): InlineKe
 function buildEditInputKeyboard(
   locale: ReturnType<typeof getLocale>,
   currentValue: string | null,
+  cancelCallback = 'daily-plan:cancel-edit',
 ): InlineKeyboard {
   return addCopyCurrentTextButton(new InlineKeyboard(), locale, currentValue).text(
     translate(locale, 'daily.cancel'),
-    'daily-plan:cancel-edit',
+    cancelCallback,
   );
 }
 
