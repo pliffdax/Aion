@@ -115,7 +115,8 @@ test('adds a plan item to the date encoded in the opened panel', async () => {
   const userId = 987654324;
   setLocale(userId, 'ru');
   const tomorrow = shiftDateKey(today, 1);
-  const addedDates: string[] = [];
+  const addedItems: Array<{ date: string; text: string }> = [];
+  const apiCalls: Array<{ method: string; payload: Record<string, unknown> }> = [];
   let nextMessageId = 100;
   const bot = new Bot('123456:test-token', {
     botInfo: {
@@ -135,6 +136,8 @@ test('adds a plan item to the date encoded in the opened panel', async () => {
     },
   });
   bot.api.config.use(async (_previous, method, payload) => {
+    apiCalls.push({ method, payload: payload as Record<string, unknown> });
+
     if (method === 'sendMessage' || method === 'editMessageText') {
       const messagePayload = payload as { message_id?: number; text?: string };
       return {
@@ -163,7 +166,7 @@ test('adds a plan item to the date encoded in the opened panel', async () => {
       date: string,
       text: string,
     ): Promise<v1.TelegramDailyPlanDto> => {
-      addedDates.push(date);
+      addedItems.push({ date, text });
       return {
         ...plan,
         telegramUserId: String(userId),
@@ -202,6 +205,79 @@ test('adds a plan item to the date encoded in the opened panel', async () => {
   await bot.handleUpdate({
     update_id: 32,
     callback_query: {
+      id: 'edit-draft-title',
+      from: { id: userId, is_bot: false, first_name: 'Test' },
+      chat_instance: 'test-chat',
+      data: 'daily-plan:edit-draft-title',
+      message: { ...panelMessage, message_id: 100, text: 'description choice' },
+    },
+  });
+
+  const draftEditPanel = [...apiCalls]
+    .reverse()
+    .find(call => call.method === 'editMessageText' && call.payload.message_id === 100);
+  assert.match(String(draftEditPanel?.payload.text), /<pre>Задача на завтра<\/pre>/);
+  assert.match(
+    JSON.stringify(draftEditPanel?.payload.reply_markup),
+    /daily-plan:cancel-draft-title-edit/,
+  );
+  assert.match(JSON.stringify(draftEditPanel?.payload.reply_markup), /"copy_text"/);
+
+  await bot.handleUpdate({
+    update_id: 33,
+    callback_query: {
+      id: 'cancel-draft-title-edit',
+      from: { id: userId, is_bot: false, first_name: 'Test' },
+      chat_instance: 'test-chat',
+      data: 'daily-plan:cancel-draft-title-edit',
+      message: { ...panelMessage, message_id: 100, text: 'draft title edit' },
+    },
+  });
+  assert.equal(
+    apiCalls.some(
+      call =>
+        call.method === 'editMessageText' &&
+        call.payload.message_id === 100 &&
+        String(call.payload.text).includes('Задача на завтра') &&
+        JSON.stringify(call.payload.reply_markup).includes('daily-plan:edit-draft-title'),
+    ),
+    true,
+  );
+
+  await bot.handleUpdate({
+    update_id: 34,
+    callback_query: {
+      id: 'edit-draft-title-again',
+      from: { id: userId, is_bot: false, first_name: 'Test' },
+      chat_instance: 'test-chat',
+      data: 'daily-plan:edit-draft-title',
+      message: { ...panelMessage, message_id: 100, text: 'description choice' },
+    },
+  });
+  await bot.handleUpdate({
+    update_id: 35,
+    message: {
+      message_id: 12,
+      date: 0,
+      chat: { id: userId, type: 'private', first_name: 'Test' },
+      from: { id: userId, is_bot: false, first_name: 'Test' },
+      text: 'Исправленная задача на завтра',
+    },
+  });
+
+  const updatedChoicePanel = [...apiCalls]
+    .reverse()
+    .find(call => call.method === 'editMessageText' && call.payload.message_id === 100);
+  assert.match(String(updatedChoicePanel?.payload.text), /Исправленная задача на завтра/);
+  assert.match(
+    JSON.stringify(updatedChoicePanel?.payload.reply_markup),
+    /daily-plan:edit-draft-title/,
+  );
+  assert.equal(addedItems.length, 0);
+
+  await bot.handleUpdate({
+    update_id: 36,
+    callback_query: {
       id: 'without-description',
       from: { id: userId, is_bot: false, first_name: 'Test' },
       chat_instance: 'test-chat',
@@ -210,7 +286,7 @@ test('adds a plan item to the date encoded in the opened panel', async () => {
     },
   });
 
-  assert.deepEqual(addedDates, [tomorrow]);
+  assert.deepEqual(addedItems, [{ date: tomorrow, text: 'Исправленная задача на завтра' }]);
 });
 
 test('validates optional daily plan descriptions at the API boundary', () => {
