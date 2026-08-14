@@ -125,6 +125,10 @@ export function buildReportHistoryItemKeyboard(
       .row();
   }
 
+  if (type === 'daily') {
+    keyboard.text(translate(locale, 'report.moveDate'), 'report:history:move-date').row();
+  }
+
   return keyboard
     .text(translate(locale, 'report.back'), 'report:history:list')
     .row()
@@ -149,28 +153,52 @@ export function renderExistingReportMenu(
   ].join('\n');
 }
 
-export function buildExistingReportKeyboard(locale: Locale): InlineKeyboard {
-  return new InlineKeyboard()
-    .text(translate(locale, 'report.existingOpen'), 'report:existing:open')
-    .row()
-    .text(translate(locale, 'report.existingEdit'), 'report:existing:edit')
-    .row()
-    .text(translate(locale, 'report.existingRefill'), 'report:existing:refill')
-    .row()
+export function buildExistingReportKeyboard(
+  locale: Locale,
+  type: v1.TelegramReportType,
+): InlineKeyboard {
+  const keyboard = addExistingReportActions(
+    new InlineKeyboard()
+      .text(translate(locale, 'report.existingOpen'), 'report:existing:open')
+      .row(),
+    locale,
+    type,
+  );
+
+  return keyboard
     .text(translate(locale, 'report.back'), 'report:existing:type-back')
     .row()
     .text(translate(locale, 'report.close'), 'report:close');
 }
 
-export function buildExistingReportOpenKeyboard(locale: Locale): InlineKeyboard {
-  return new InlineKeyboard()
-    .text(translate(locale, 'report.existingEdit'), 'report:existing:edit')
-    .row()
-    .text(translate(locale, 'report.existingRefill'), 'report:existing:refill')
-    .row()
+export function buildExistingReportOpenKeyboard(
+  locale: Locale,
+  type: v1.TelegramReportType,
+): InlineKeyboard {
+  const keyboard = addExistingReportActions(new InlineKeyboard(), locale, type);
+
+  return keyboard
     .text(translate(locale, 'report.back'), 'report:existing:back')
     .row()
     .text(translate(locale, 'report.close'), 'report:close');
+}
+
+function addExistingReportActions(
+  keyboard: InlineKeyboard,
+  locale: Locale,
+  type: v1.TelegramReportType,
+): InlineKeyboard {
+  keyboard
+    .text(translate(locale, 'report.existingEdit'), 'report:existing:edit')
+    .row()
+    .text(translate(locale, 'report.existingRefill'), 'report:existing:refill')
+    .row();
+
+  if (type === 'daily') {
+    keyboard.text(translate(locale, 'report.moveDate'), 'report:existing:move-date').row();
+  }
+
+  return keyboard;
 }
 
 function reportHistoryLabel(locale: Locale, report: v1.TelegramReportDto): string {

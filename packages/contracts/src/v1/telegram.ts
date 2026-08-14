@@ -366,6 +366,16 @@ export const ReplaceTelegramReportDtoSchema = z.object({
 });
 export type ReplaceTelegramReportDto = z.infer<typeof ReplaceTelegramReportDtoSchema>;
 
+export const MoveTelegramDailyReportDtoSchema = z.object({
+  telegramUserId: TelegramUserIdSchema,
+  reportId: CuidSchema,
+  expectedRevision: z.number().int().positive(),
+  targetDate: TelegramPlanDateSchema,
+  text: TelegramReportTextSchema,
+  telegramMessageId: TelegramUserIdSchema,
+});
+export type MoveTelegramDailyReportDto = z.infer<typeof MoveTelegramDailyReportDtoSchema>;
+
 const TelegramDailyPlanItemDescriptionSchema = z.string().trim().min(1).max(2000);
 
 export const TelegramDailyPlanItemDtoSchema = z.object({

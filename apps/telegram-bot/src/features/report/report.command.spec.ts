@@ -77,6 +77,77 @@ test('opens report editing from history and removes the panel on cancel', async 
   );
 });
 
+test('moves a daily report from history and rewrites its displayed date', async () => {
+  const userId = 987654323;
+  const messageId = 50;
+  const apiCalls: { method: string; payload: Record<string, unknown> }[] = [];
+  const report = editableDailyReport(userId);
+  const movePayloads: Omit<v1.MoveTelegramDailyReportDto, 'telegramUserId'>[] = [];
+  const apiClient = {
+    upsertTelegramUser: async () => ({
+      id: 'user2',
+      telegramUserId: String(userId),
+      username: 'tester',
+      firstName: 'Test',
+      locale: 'ru' as const,
+      reportAuthorName: 'Test User',
+      reportStartDate: '2026-08-01',
+      reportDailySections: report.configuration,
+      reportWeeklySections: [field('weekly-summary', 'Итог недели', 'text')],
+    }),
+    listReportHistory: async () => ({ items: [report], nextCursor: null }),
+    getReportHistoryItem: async () => report,
+    findEditableReport: async (_telegramUserId: number, query: { periodStart: string }) =>
+      query.periodStart === report.periodStart ? report : null,
+    moveDailyReport: async (
+      _telegramUserId: number,
+      payload: Omit<v1.MoveTelegramDailyReportDto, 'telegramUserId'>,
+    ) => {
+      movePayloads.push(payload);
+      return {
+        ...report,
+        periodStart: payload.targetDate,
+        periodEnd: payload.targetDate,
+        text: payload.text,
+        telegramMessageId: payload.telegramMessageId,
+        revision: 2,
+      };
+    },
+  } as unknown as AionApiClient;
+  const bot = testBot(userId, apiCalls);
+  registerReportHandlers(bot, apiClient);
+
+  await command.handle(
+    {
+      from: { id: userId, is_bot: false, first_name: 'Test', username: 'tester' },
+      api: bot.api,
+      reply: async (text: string, options: object) => {
+        await bot.api.sendMessage(userId, text, options);
+        return {
+          message_id: messageId,
+          date: 0,
+          chat: { id: userId, type: 'private', first_name: 'Test' },
+          text,
+        };
+      },
+    } as never,
+    [],
+  );
+
+  await callback(bot, userId, messageId, 1, 'report:menu:history');
+  await callback(bot, userId, messageId, 2, `report:history:item:${report.id}`);
+  await callback(bot, userId, messageId, 3, 'report:history:move-date');
+  await callback(bot, userId, messageId, 4, 'report:move-date:quick:2026-08-04');
+
+  assert.equal(movePayloads[0]?.targetDate, '2026-08-04');
+  assert.match(movePayloads[0]?.text ?? '', /<b>04\.08\.2026<\/b>/);
+  assert.match(movePayloads[0]?.text ?? '', /#Неделя1 #День4/);
+  const finalPanel = [...apiCalls]
+    .reverse()
+    .find(call => call.method === 'editMessageText' && call.payload.message_id === messageId);
+  assert.match(String(finalPanel?.payload.text), /04\.08\.2026/);
+});
+
 function countMethod(
   apiCalls: { method: string; payload: Record<string, unknown> }[],
   method: string,
