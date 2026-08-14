@@ -169,6 +169,81 @@ test('replaces a sent report and preserves its previous revision', async () => {
   );
 });
 
+test('moves a sent daily report to another date and preserves its previous revision', async () => {
+  const database = createReportDatabase();
+  const service = new TelegramService(database.client as never);
+  const configuration = [field('summary', 'Итог', 'text')];
+  const answers = {
+    summary: { text: 'После полуночи', items: [], rating: null, boolean: null },
+  };
+  const claim = await service.claimReportDelivery({
+    telegramUserId: '123',
+    type: 'daily',
+    periodStart: '2026-08-03',
+    periodEnd: '2026-08-03',
+    text: '<b>03.08.2026</b>\nOriginal',
+    answers,
+    configuration,
+  });
+  assert.equal(claim.outcome, 'claimed');
+  await service.completeReportDelivery({
+    reportId: claim.reportId,
+    deliveryToken: claim.deliveryToken,
+    telegramMessageId: '77',
+  });
+
+  const moved = await service.moveDailyReport({
+    telegramUserId: '123',
+    reportId: claim.reportId,
+    expectedRevision: 1,
+    targetDate: '2026-08-02',
+    text: '<b>02.08.2026</b>\nMoved',
+    telegramMessageId: '77',
+  });
+
+  assert.equal(moved.periodStart, '2026-08-02');
+  assert.equal(moved.periodEnd, '2026-08-02');
+  assert.equal(moved.revision, 2);
+  assert.equal(moved.text, '<b>02.08.2026</b>\nMoved');
+  assert.equal(database.revisions.length, 1);
+  assert.equal(database.revisions[0]?.revision, 1);
+  assert.equal(database.revisions[0]?.text, '<b>03.08.2026</b>\nOriginal');
+});
+
+test('rejects moving a daily report onto an occupied date', async () => {
+  const database = createReportDatabase();
+  const service = new TelegramService(database.client as never);
+
+  for (const date of ['2026-08-02', '2026-08-03']) {
+    const claim = await service.claimReportDelivery({
+      telegramUserId: '123',
+      type: 'daily',
+      periodStart: date,
+      periodEnd: date,
+      text: date,
+    });
+    assert.equal(claim.outcome, 'claimed');
+    await service.completeReportDelivery({
+      reportId: claim.reportId,
+      deliveryToken: claim.deliveryToken,
+      telegramMessageId: date === '2026-08-02' ? '76' : '77',
+    });
+  }
+
+  await assert.rejects(
+    service.moveDailyReport({
+      telegramUserId: '123',
+      reportId: database.reports[1]!.id,
+      expectedRevision: 1,
+      targetDate: '2026-08-02',
+      text: 'Moved',
+      telegramMessageId: '77',
+    }),
+    ConflictException,
+  );
+  assert.equal(database.reports[1]?.periodStart.toISOString().slice(0, 10), '2026-08-03');
+});
+
 function createReportDatabase() {
   const user = {
     id: 'user-1',
@@ -270,6 +345,7 @@ function createReportDatabase() {
 
 function matchesReport(report: ReportRow, where: ReportWhere): boolean {
   if (where.id && report.id !== where.id) return false;
+  if (where.userId && report.userId !== where.userId) return false;
   if (where.type) {
     if (typeof where.type === 'object') {
       if (!where.type.in.includes(report.type)) return false;
@@ -342,6 +418,7 @@ interface ReportRevisionRow {
 
 interface ReportWhere {
   id?: string;
+  userId?: string;
   type?: TelegramReportType | { in: TelegramReportType[] };
   periodStart?: Date;
   periodEnd?: Date;

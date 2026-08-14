@@ -36,6 +36,7 @@ export interface ReportSession {
   nextItemId: number;
   existingReport: v1.EditableTelegramReportDto | null;
   replaceMode: 'edit' | 'refill' | null;
+  movingReportDate: boolean;
 }
 
 export function createReportSession(
@@ -70,6 +71,7 @@ export function createReportSession(
     nextItemId: 1,
     existingReport: null,
     replaceMode: null,
+    movingReportDate: false,
   };
 }
 
@@ -83,6 +85,7 @@ export function setReportType(session: ReportSession, type: ReportType): void {
   session.editingItemId = null;
   session.existingReport = null;
   session.replaceMode = null;
+  session.movingReportDate = false;
 }
 
 export function selectExistingReport(
@@ -95,6 +98,7 @@ export function selectExistingReport(
   session.editingItemId = null;
   session.existingReport = report;
   session.replaceMode = null;
+  session.movingReportDate = false;
 }
 
 export function clearExistingReportSelection(session: ReportSession): void {
@@ -103,6 +107,7 @@ export function clearExistingReportSelection(session: ReportSession): void {
   session.editingItemId = null;
   session.existingReport = null;
   session.replaceMode = null;
+  session.movingReportDate = false;
 }
 
 export function editExistingReport(session: ReportSession): boolean {

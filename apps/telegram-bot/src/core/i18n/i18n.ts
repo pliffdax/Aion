@@ -382,6 +382,63 @@ const translations = {
   'report.existingOpen': ['📄 Открыть', '📄 Відкрити', '📄 Open'],
   'report.existingEdit': ['✏️ Редактировать', '✏️ Редагувати', '✏️ Edit'],
   'report.existingRefill': ['🔄 Заполнить заново', '🔄 Заповнити заново', '🔄 Fill again'],
+  'report.moveDate': ['📅 Перенести дату', '📅 Перенести дату', '📅 Move date'],
+  'report.moveDateTitle': [
+    '<b>Перенести дневной отчёт</b>',
+    '<b>Перенести денний звіт</b>',
+    '<b>Move daily report</b>',
+  ],
+  'report.moveDateSource': [
+    'Текущая дата: <code>{date}</code>',
+    'Поточна дата: <code>{date}</code>',
+    'Current date: <code>{date}</code>',
+  ],
+  'report.moveDatePrompt': [
+    'Выберите дату или отправьте её сообщением в формате <code>ДД.ММ.ГГГГ</code>, например <code>{example}</code>.',
+    'Оберіть дату або надішліть її повідомленням у форматі <code>ДД.ММ.РРРР</code>, наприклад <code>{example}</code>.',
+    'Choose a date or send it as <code>DD.MM.YYYY</code>, for example <code>{example}</code>.',
+  ],
+  'report.yesterday': ['Вчера', 'Учора', 'Yesterday'],
+  'report.moveDateSame': [
+    'Отчёт уже находится на этой дате.',
+    'Звіт уже знаходиться на цій даті.',
+    'The report already belongs to this date.',
+  ],
+  'report.moveDateFuture': [
+    'Отчёт нельзя перенести в будущий день.',
+    'Звіт не можна перенести в майбутній день.',
+    'A report cannot be moved to a future date.',
+  ],
+  'report.moveDateBeforeStart': [
+    'Дата не может быть раньше начала отсчёта отчётов.',
+    'Дата не може бути раніше початку відліку звітів.',
+    'The date cannot be earlier than report tracking started.',
+  ],
+  'report.moveDateInvalid': [
+    'Не получилось распознать дату.',
+    'Не вдалося розпізнати дату.',
+    'Could not recognize the date.',
+  ],
+  'report.moveDateConflict': [
+    'На эту дату уже существует дневной отчёт. Сначала измените или перенесите его.',
+    'На цю дату вже існує денний звіт. Спочатку змініть або перенесіть його.',
+    'A daily report already exists for this date. Edit or move it first.',
+  ],
+  'report.moveDateFailed': [
+    'Не удалось перенести отчёт. Откройте его заново и повторите попытку.',
+    'Не вдалося перенести звіт. Відкрийте його знову й повторіть спробу.',
+    'Could not move the report. Open it again and retry.',
+  ],
+  'report.moveDateSuccess': [
+    '<b>Отчёт перенесён на {date}</b>',
+    '<b>Звіт перенесено на {date}</b>',
+    '<b>Report moved to {date}</b>',
+  ],
+  'report.moveDateUnavailable': [
+    'Этот старый отчёт нельзя безопасно перенести: в нём не сохранены структурированные ответы.',
+    'Цей старий звіт не можна безпечно перенести: у ньому не збережені структуровані відповіді.',
+    'This older report cannot be moved safely because it has no structured answers.',
+  ],
   'report.legacyEditUnavailable': [
     'Этот отчёт создан до поддержки редактирования. Его можно заполнить заново.',
     'Цей звіт створено до підтримки редагування. Його можна заповнити заново.',

@@ -9,6 +9,7 @@ import type { v1 } from '@aion/contracts';
 import type { AionApiClient } from '../../core/api/aion-api-client.js';
 import type { Command } from '../../core/commands/command.js';
 import { getLocale, translate, type Locale } from '../../core/i18n/i18n.js';
+import { parseDateKeyInput } from '../../core/time/kyiv-calendar.js';
 import {
   buildReportAuthorTag,
   normalizeReportAuthorName,
@@ -27,6 +28,11 @@ import {
   formatWeeklyReport,
   type ReportItem,
 } from './report.formatter.js';
+import {
+  moveDailyReportToDate,
+  showReportDateMove,
+  startMovingReportDate,
+} from './report-date-move.js';
 import {
   advanceReportStep,
   copyReportField,
@@ -95,6 +101,7 @@ const configurationMovePattern = /^report:config:(daily|weekly):move:(up|down):(
 const maxReportFields = 12;
 
 type ItemAction = 'status' | 'edit' | 'delete';
+type HistoryReportAction = 'edit' | 'refill' | 'move-date';
 
 type ReportSetupStep =
   | 'report-menu'
@@ -357,11 +364,15 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
   });
 
   bot.callbackQuery('report:history:edit', async context => {
-    await beginHistoryReportReplacement(context, apiClient, 'edit');
+    await beginHistoryReportAction(context, apiClient, 'edit');
   });
 
   bot.callbackQuery('report:history:refill', async context => {
-    await beginHistoryReportReplacement(context, apiClient, 'refill');
+    await beginHistoryReportAction(context, apiClient, 'refill');
+  });
+
+  bot.callbackQuery('report:history:move-date', async context => {
+    await beginHistoryReportAction(context, apiClient, 'move-date');
   });
 
   bot.callbackQuery('report:history:list', async context => {
@@ -719,7 +730,10 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
     await context.answerCallbackQuery();
     await context.editMessageText(session.existingReport.text, {
       parse_mode: 'HTML',
-      reply_markup: buildExistingReportOpenKeyboard(getLocale(session.userId)),
+      reply_markup: buildExistingReportOpenKeyboard(
+        getLocale(session.userId),
+        session.existingReport.type,
+      ),
     });
   });
 
@@ -765,6 +779,42 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
     claimTextInput(session.userId, 'report');
     await context.answerCallbackQuery();
     await refreshCollector(context.api, session);
+  });
+
+  bot.callbackQuery('report:existing:move-date', async context => {
+    const session = await activeSession(context);
+    if (!session?.existingReport || session.replaceMode || session.movingReportDate) return;
+
+    if (!startMovingReportDate(session)) {
+      await context.answerCallbackQuery({
+        text: translate(getLocale(session.userId), 'report.moveDateUnavailable'),
+        show_alert: true,
+      });
+      return;
+    }
+
+    claimTextInput(session.userId, 'report');
+    await context.answerCallbackQuery();
+    await showReportDateMove(context.api, session);
+  });
+
+  bot.callbackQuery(/^report:move-date:quick:(\d{4}-\d{2}-\d{2})$/, async context => {
+    const session = await activeSession(context);
+    if (!session?.movingReportDate) return;
+
+    await context.answerCallbackQuery();
+    const moved = await moveDailyReportToDate(context.api, apiClient, session, context.match[1]);
+    if (moved) releaseTextInput(session.userId, 'report');
+  });
+
+  bot.callbackQuery('report:move-date:cancel', async context => {
+    const session = await activeSession(context);
+    if (!session?.movingReportDate) return;
+
+    session.movingReportDate = false;
+    releaseTextInput(session.userId, 'report');
+    await context.answerCallbackQuery();
+    await showExistingReportMenu(context.api, session);
   });
 
   bot.callbackQuery('report:menu:back', async context => {
@@ -975,6 +1025,19 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
     const locale = getLocale(context.from.id);
     const text = input.trim();
 
+    if (session.movingReportDate) {
+      await context.deleteMessage().catch(() => undefined);
+      const targetDate = parseDateKeyInput(text);
+      if (!targetDate) {
+        await showReportDateMove(context.api, session, translate(locale, 'report.moveDateInvalid'));
+        return;
+      }
+
+      const moved = await moveDailyReportToDate(context.api, apiClient, session, targetDate);
+      if (moved) releaseTextInput(session.userId, 'report');
+      return;
+    }
+
     if (!text) {
       await context.reply(translate(locale, 'daily.emptyItem'));
       return;
@@ -1167,10 +1230,10 @@ async function activeSetupSession(context: {
   return null;
 }
 
-async function beginHistoryReportReplacement(
+async function beginHistoryReportAction(
   context: CallbackQueryContext<Context>,
   apiClient: AionApiClient,
-  mode: 'edit' | 'refill',
+  mode: HistoryReportAction,
 ): Promise<void> {
   const setup = await activeSetupSession(context);
   if (!setup || setup.step !== 'report-history-item') return;
@@ -1202,10 +1265,10 @@ async function beginHistoryReportReplacement(
   session.calendar = calculateReportCalendar(selected.periodStart, setup.startDate);
   selectExistingReport(session, selected.type, existing);
 
-  const started = mode === 'edit' ? editExistingReport(session) : refillExistingReport(session);
+  const started = startHistoryReportAction(session, mode);
   if (!started) {
     await context.answerCallbackQuery({
-      text: translate(getLocale(setup.userId), 'report.legacyEditUnavailable'),
+      text: translate(getLocale(setup.userId), unavailableHistoryActionKey(mode)),
       show_alert: true,
     });
     return;
@@ -1215,7 +1278,25 @@ async function beginHistoryReportReplacement(
   sessionsByUserId.set(setup.userId, session);
   claimTextInput(setup.userId, 'report');
   await context.answerCallbackQuery();
-  await refreshCollector(context.api, session);
+  if (mode === 'move-date') await showReportDateMove(context.api, session);
+  else await refreshCollector(context.api, session);
+}
+
+function startHistoryReportAction(session: ReportSession, action: HistoryReportAction): boolean {
+  switch (action) {
+    case 'edit':
+      return editExistingReport(session);
+    case 'refill':
+      return refillExistingReport(session);
+    case 'move-date':
+      return startMovingReportDate(session);
+  }
+}
+
+function unavailableHistoryActionKey(
+  action: HistoryReportAction,
+): 'report.moveDateUnavailable' | 'report.legacyEditUnavailable' {
+  return action === 'move-date' ? 'report.moveDateUnavailable' : 'report.legacyEditUnavailable';
 }
 
 async function processReportInput(
@@ -1602,7 +1683,7 @@ async function showExistingReportMenu(
     renderExistingReportMenu(locale, session.existingReport),
     {
       parse_mode: 'HTML',
-      reply_markup: buildExistingReportKeyboard(locale),
+      reply_markup: buildExistingReportKeyboard(locale, session.existingReport.type),
     },
   );
 }
