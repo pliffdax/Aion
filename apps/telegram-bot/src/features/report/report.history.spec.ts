@@ -40,6 +40,7 @@ test('report menu and history keyboards provide complete forward and back naviga
   assert.deepEqual(callbacks(buildReportHistoryItemKeyboard('ru', 'daily')), [
     'report:history:edit',
     'report:history:refill',
+    'report:history:move-date',
     'report:history:list',
     'report:setup:cancel',
   ]);
@@ -55,7 +56,7 @@ test('history makes the migration boundary and selected filter explicit', () => 
   assert.match(renderReportHistory('ru', 'weekly_statistics', []), /автоматические снимки/);
 });
 
-test('existing report menu exposes open, edit, and refill actions', () => {
+test('existing daily report menu exposes open, edit, refill, and date move actions', () => {
   const editableReport: v1.EditableTelegramReportDto = {
     ...dailyReport,
     answers: null,
@@ -64,23 +65,40 @@ test('existing report menu exposes open, edit, and refill actions', () => {
     telegramMessageId: '77',
   };
 
-  assert.deepEqual(callbacks(buildExistingReportKeyboard('ru')), [
+  assert.deepEqual(callbacks(buildExistingReportKeyboard('ru', 'daily')), [
     'report:existing:open',
     'report:existing:edit',
     'report:existing:refill',
+    'report:existing:move-date',
     'report:existing:type-back',
     'report:close',
   ]);
-  assert.deepEqual(callbacks(buildExistingReportOpenKeyboard('ru')), [
+  assert.deepEqual(callbacks(buildExistingReportOpenKeyboard('ru', 'daily')), [
     'report:existing:edit',
     'report:existing:refill',
+    'report:existing:move-date',
     'report:existing:back',
     'report:close',
   ]);
+  assert.equal(
+    callbacks(buildExistingReportKeyboard('ru', 'weekly')).includes('report:existing:move-date'),
+    false,
+  );
   assert.match(renderExistingReportMenu('ru', editableReport), /Отчёт уже создан/);
 });
 
 test('report history contracts validate exact periods, pagination, and claim outcomes', () => {
+  assert.equal(
+    v1.MoveTelegramDailyReportDtoSchema.safeParse({
+      telegramUserId: '123',
+      reportId: 'report-1',
+      expectedRevision: 1,
+      targetDate: '2026-08-02',
+      text: 'Moved report',
+      telegramMessageId: '77',
+    }).success,
+    true,
+  );
   assert.equal(
     v1.ClaimTelegramReportDeliveryDtoSchema.safeParse({
       telegramUserId: '123',

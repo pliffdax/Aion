@@ -124,6 +124,18 @@ export class AionApiClient {
     });
   }
 
+  moveDailyReport(
+    telegramUserId: number,
+    report: Omit<v1.MoveTelegramDailyReportDto, 'telegramUserId'>,
+  ): Promise<v1.EditableTelegramReportDto> {
+    return this.request(
+      '/telegram/reports/editable/date',
+      v1.EditableTelegramReportDtoSchema,
+      'PATCH',
+      { telegramUserId: String(telegramUserId), ...report },
+    );
+  }
+
   getOrCreateDailyPlan(telegramUserId: number, date: string): Promise<v1.TelegramDailyPlanDto> {
     return this.request('/telegram/daily-plans', v1.TelegramDailyPlanDtoSchema, 'PUT', {
       telegramUserId: String(telegramUserId),

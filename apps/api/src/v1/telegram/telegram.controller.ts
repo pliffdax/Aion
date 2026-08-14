@@ -77,6 +77,11 @@ export class TelegramController {
     return this.telegram.replaceReport(parseBody(v1.ReplaceTelegramReportDtoSchema, body));
   }
 
+  @Patch('reports/editable/date')
+  moveDailyReport(@Body() body: unknown) {
+    return this.telegram.moveDailyReport(parseBody(v1.MoveTelegramDailyReportDtoSchema, body));
+  }
+
   @Post('daily-plans/statistics/weekly')
   getWeeklyPlanStatistics(@Body() body: unknown) {
     return this.weeklyStatistics.get(parseBody(v1.GetTelegramWeeklyPlanStatisticsDtoSchema, body));
