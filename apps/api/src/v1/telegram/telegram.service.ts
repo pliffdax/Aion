@@ -22,6 +22,7 @@ const maxActiveReminders = 100;
 const reminderClaimLeaseMs = 5 * 60_000;
 const maxReminderDeliveryAttempts = 3;
 const reportClaimLeaseMs = 5 * 60_000;
+const millisecondsPerDay = 86_400_000;
 const planWithItems = {
   include: {
     user: true,
@@ -343,19 +344,31 @@ export class TelegramService {
   }
 
   async moveDailyReport(dto: v1.MoveTelegramDailyReportDto): Promise<v1.EditableTelegramReportDto> {
-    const targetDate = parseReportDate(dto.targetDate);
+    return this.moveReportPeriod({
+      telegramUserId: dto.telegramUserId,
+      reportId: dto.reportId,
+      expectedRevision: dto.expectedRevision,
+      type: 'daily',
+      periodStart: dto.targetDate,
+      periodEnd: dto.targetDate,
+      text: dto.text,
+      telegramMessageId: dto.telegramMessageId,
+    });
+  }
 
-    if (dto.targetDate > currentKyivDateKey()) {
-      throw new BadRequestException('Daily reports cannot be moved into the future');
-    }
+  async moveReportPeriod(
+    dto: v1.MoveTelegramReportPeriodDto,
+  ): Promise<v1.EditableTelegramReportDto> {
+    const periodStart = parseReportDate(dto.periodStart);
+    const periodEnd = parseReportDate(dto.periodEnd);
 
     try {
       return await this.prisma.$transaction(transaction =>
-        moveDailyReportWithinTransaction(transaction, dto, targetDate),
+        moveReportPeriodWithinTransaction(transaction, dto, periodStart, periodEnd),
       );
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException('A daily report already exists for the target date');
+        throw new ConflictException('A report already exists for the target period');
       }
       throw error;
     }
@@ -1015,68 +1028,147 @@ async function preserveReportRevision(
   });
 }
 
-async function moveDailyReportWithinTransaction(
+async function moveReportPeriodWithinTransaction(
   transaction: Pick<Prisma.TransactionClient, 'telegramReport' | 'telegramReportRevision'>,
-  dto: v1.MoveTelegramDailyReportDto,
-  targetDate: Date,
+  dto: v1.MoveTelegramReportPeriodDto,
+  periodStart: Date,
+  periodEnd: Date,
 ): Promise<v1.EditableTelegramReportDto> {
+  const type = toPrismaReportType(dto.type);
   const report = await transaction.telegramReport.findFirst({
     where: {
       id: dto.reportId,
       user: { telegramId: BigInt(dto.telegramUserId) },
-      type: TelegramReportType.DAILY,
+      type,
       deliveryStatus: TelegramReportDeliveryStatus.SENT,
     },
     include: { user: true },
   });
 
-  if (!report) throw new NotFoundException('Editable daily report not found');
-  validateDailyReportMove(report, dto.expectedRevision, targetDate);
-  await ensureDailyReportDateAvailable(transaction, report.userId, targetDate);
-  await updateDailyReportDate(transaction, report.id, dto, targetDate);
+  if (!report) throw new NotFoundException('Editable report not found');
+  validateReportPeriodMove(report, dto, periodStart, periodEnd);
+  await ensureReportPeriodAvailable(transaction, report.userId, type, periodStart, periodEnd);
+  await updateReportPeriod(transaction, report.id, dto, periodStart, periodEnd);
   await preserveReportRevision(transaction, report);
   return toEditableReportDto(await findEditableReportById(transaction, report.id));
 }
 
-function validateDailyReportMove(
+function validateReportPeriodMove(
   report: ReportWithUserRecord,
-  expectedRevision: number,
-  targetDate: Date,
+  dto: v1.MoveTelegramReportPeriodDto,
+  periodStart: Date,
+  periodEnd: Date,
 ): void {
+  validateReportMoveRevision(report, dto.expectedRevision);
+  validateNewReportPeriod(report, periodStart, periodEnd);
+  validateReportTrackingStart(report, periodStart);
+
+  if (dto.type === 'daily') {
+    validateDailyReportTarget(dto.periodStart);
+    return;
+  }
+
+  validateWeeklyReportPeriod(report, periodStart, periodEnd);
+}
+
+function validateReportMoveRevision(report: ReportWithUserRecord, expectedRevision: number): void {
   if (report.revision !== expectedRevision) {
     throw new ConflictException('Report was updated by another session');
   }
-  if (report.periodStart.getTime() === targetDate.getTime()) {
-    throw new BadRequestException('Report already belongs to the target date');
+}
+
+function validateNewReportPeriod(
+  report: ReportWithUserRecord,
+  periodStart: Date,
+  periodEnd: Date,
+): void {
+  const samePeriod =
+    report.periodStart.getTime() === periodStart.getTime() &&
+    report.periodEnd.getTime() === periodEnd.getTime();
+  if (samePeriod) {
+    throw new BadRequestException('Report already belongs to the target period');
   }
-  if (report.user.reportStartDate && targetDate < report.user.reportStartDate) {
+}
+
+function validateReportTrackingStart(report: ReportWithUserRecord, periodStart: Date): void {
+  const trackingStart = report.user.reportStartDate;
+  if (trackingStart && periodStart < trackingStart) {
     throw new BadRequestException('Report date cannot precede the report tracking start date');
   }
 }
 
-async function ensureDailyReportDateAvailable(
+function validateDailyReportTarget(periodStart: string): void {
+  if (periodStart > currentKyivDateKey()) {
+    throw new BadRequestException('Daily reports cannot be moved into the future');
+  }
+}
+
+function validateWeeklyReportPeriod(
+  report: ReportWithUserRecord,
+  periodStart: Date,
+  periodEnd: Date,
+): void {
+  const trackingStart = report.user.reportStartDate;
+  if (!trackingStart) {
+    throw new BadRequestException('Weekly reports require a report tracking start date');
+  }
+
+  if (!isAlignedWeeklyPeriod(periodStart, trackingStart)) {
+    throw new BadRequestException('Weekly report period must align with the report calendar');
+  }
+  if (!isSevenDayPeriod(periodStart, periodEnd)) {
+    throw new BadRequestException('Weekly report period must contain exactly seven days');
+  }
+  if (isFutureReportWeek(periodStart, trackingStart)) {
+    throw new BadRequestException('Weekly reports cannot be moved into a future report week');
+  }
+}
+
+function isAlignedWeeklyPeriod(periodStart: Date, trackingStart: Date): boolean {
+  const elapsedDays = (periodStart.getTime() - trackingStart.getTime()) / millisecondsPerDay;
+  return Number.isInteger(elapsedDays) && elapsedDays >= 0 && elapsedDays % 7 === 0;
+}
+
+function isSevenDayPeriod(periodStart: Date, periodEnd: Date): boolean {
+  return (periodEnd.getTime() - periodStart.getTime()) / millisecondsPerDay === 6;
+}
+
+function isFutureReportWeek(periodStart: Date, trackingStart: Date): boolean {
+  const today = parseReportDate(currentKyivDateKey());
+  const currentWeek = Math.floor(
+    (today.getTime() - trackingStart.getTime()) / millisecondsPerDay / 7,
+  );
+  const currentPeriodStart = new Date(trackingStart);
+  currentPeriodStart.setUTCDate(currentPeriodStart.getUTCDate() + Math.max(0, currentWeek) * 7);
+  return today < trackingStart || periodStart > currentPeriodStart;
+}
+
+async function ensureReportPeriodAvailable(
   transaction: Pick<Prisma.TransactionClient, 'telegramReport'>,
   userId: string,
-  targetDate: Date,
+  type: TelegramReportType,
+  periodStart: Date,
+  periodEnd: Date,
 ): Promise<void> {
   const targetReport = await transaction.telegramReport.findFirst({
     where: {
       userId,
-      type: TelegramReportType.DAILY,
-      periodStart: targetDate,
-      periodEnd: targetDate,
+      type,
+      periodStart,
+      periodEnd,
     },
   });
   if (targetReport) {
-    throw new ConflictException('A daily report already exists for the target date');
+    throw new ConflictException('A report already exists for the target period');
   }
 }
 
-async function updateDailyReportDate(
+async function updateReportPeriod(
   transaction: Pick<Prisma.TransactionClient, 'telegramReport'>,
   reportId: string,
-  dto: v1.MoveTelegramDailyReportDto,
-  targetDate: Date,
+  dto: v1.MoveTelegramReportPeriodDto,
+  periodStart: Date,
+  periodEnd: Date,
 ): Promise<void> {
   const moved = await transaction.telegramReport.updateMany({
     where: {
@@ -1085,8 +1177,8 @@ async function updateDailyReportDate(
       deliveryStatus: TelegramReportDeliveryStatus.SENT,
     },
     data: {
-      periodStart: targetDate,
-      periodEnd: targetDate,
+      periodStart,
+      periodEnd,
       text: dto.text,
       telegramMessageId: BigInt(dto.telegramMessageId),
       revision: { increment: 1 },

@@ -376,6 +376,20 @@ export const MoveTelegramDailyReportDtoSchema = z.object({
 });
 export type MoveTelegramDailyReportDto = z.infer<typeof MoveTelegramDailyReportDtoSchema>;
 
+export const MoveTelegramReportPeriodDtoSchema = z
+  .object({
+    telegramUserId: TelegramUserIdSchema,
+    reportId: CuidSchema,
+    expectedRevision: z.number().int().positive(),
+    type: z.enum(['daily', 'weekly']),
+    periodStart: TelegramPlanDateSchema,
+    periodEnd: TelegramPlanDateSchema,
+    text: TelegramReportTextSchema,
+    telegramMessageId: TelegramUserIdSchema,
+  })
+  .superRefine(validateTelegramReportPeriod);
+export type MoveTelegramReportPeriodDto = z.infer<typeof MoveTelegramReportPeriodDtoSchema>;
+
 const TelegramDailyPlanItemDescriptionSchema = z.string().trim().min(1).max(2000);
 
 export const TelegramDailyPlanItemDtoSchema = z.object({

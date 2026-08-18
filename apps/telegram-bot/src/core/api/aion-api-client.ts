@@ -124,12 +124,12 @@ export class AionApiClient {
     });
   }
 
-  moveDailyReport(
+  moveReportPeriod(
     telegramUserId: number,
-    report: Omit<v1.MoveTelegramDailyReportDto, 'telegramUserId'>,
+    report: Omit<v1.MoveTelegramReportPeriodDto, 'telegramUserId'>,
   ): Promise<v1.EditableTelegramReportDto> {
     return this.request(
-      '/telegram/reports/editable/date',
+      '/telegram/reports/editable/period',
       v1.EditableTelegramReportDtoSchema,
       'PATCH',
       { telegramUserId: String(telegramUserId), ...report },

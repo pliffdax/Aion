@@ -82,7 +82,7 @@ test('moves a daily report from history and rewrites its displayed date', async 
   const messageId = 50;
   const apiCalls: { method: string; payload: Record<string, unknown> }[] = [];
   const report = editableDailyReport(userId);
-  const movePayloads: Omit<v1.MoveTelegramDailyReportDto, 'telegramUserId'>[] = [];
+  const movePayloads: Omit<v1.MoveTelegramReportPeriodDto, 'telegramUserId'>[] = [];
   const apiClient = {
     upsertTelegramUser: async () => ({
       id: 'user2',
@@ -99,15 +99,15 @@ test('moves a daily report from history and rewrites its displayed date', async 
     getReportHistoryItem: async () => report,
     findEditableReport: async (_telegramUserId: number, query: { periodStart: string }) =>
       query.periodStart === report.periodStart ? report : null,
-    moveDailyReport: async (
+    moveReportPeriod: async (
       _telegramUserId: number,
-      payload: Omit<v1.MoveTelegramDailyReportDto, 'telegramUserId'>,
+      payload: Omit<v1.MoveTelegramReportPeriodDto, 'telegramUserId'>,
     ) => {
       movePayloads.push(payload);
       return {
         ...report,
-        periodStart: payload.targetDate,
-        periodEnd: payload.targetDate,
+        periodStart: payload.periodStart,
+        periodEnd: payload.periodEnd,
         text: payload.text,
         telegramMessageId: payload.telegramMessageId,
         revision: 2,
@@ -139,13 +139,87 @@ test('moves a daily report from history and rewrites its displayed date', async 
   await callback(bot, userId, messageId, 3, 'report:history:move-date');
   await callback(bot, userId, messageId, 4, 'report:move-date:quick:2026-08-04');
 
-  assert.equal(movePayloads[0]?.targetDate, '2026-08-04');
+  assert.equal(movePayloads[0]?.periodStart, '2026-08-04');
+  assert.equal(movePayloads[0]?.periodEnd, '2026-08-04');
+  assert.equal(movePayloads[0]?.type, 'daily');
   assert.match(movePayloads[0]?.text ?? '', /<b>04\.08\.2026<\/b>/);
   assert.match(movePayloads[0]?.text ?? '', /#Неделя1 #День4/);
   const finalPanel = [...apiCalls]
     .reverse()
     .find(call => call.method === 'editMessageText' && call.payload.message_id === messageId);
   assert.match(String(finalPanel?.payload.text), /04\.08\.2026/);
+});
+
+test('moves a weekly report to its anchored report week and rewrites its week number', async () => {
+  const userId = 987654324;
+  const messageId = 50;
+  const apiCalls: { method: string; payload: Record<string, unknown> }[] = [];
+  const report = editableWeeklyReport(userId);
+  const movePayloads: Omit<v1.MoveTelegramReportPeriodDto, 'telegramUserId'>[] = [];
+  const apiClient = {
+    upsertTelegramUser: async () => ({
+      id: 'user3',
+      telegramUserId: String(userId),
+      username: 'tester',
+      firstName: 'Test',
+      locale: 'ru' as const,
+      reportAuthorName: 'Test User',
+      reportStartDate: '2026-08-01',
+      reportDailySections: [field('summary', 'Итог дня', 'text')],
+      reportWeeklySections: report.configuration,
+    }),
+    listReportHistory: async () => ({ items: [report], nextCursor: null }),
+    getReportHistoryItem: async () => report,
+    findEditableReport: async (_telegramUserId: number, query: { periodStart: string }) =>
+      query.periodStart === report.periodStart ? report : null,
+    moveReportPeriod: async (
+      _telegramUserId: number,
+      payload: Omit<v1.MoveTelegramReportPeriodDto, 'telegramUserId'>,
+    ) => {
+      movePayloads.push(payload);
+      return {
+        ...report,
+        periodStart: payload.periodStart,
+        periodEnd: payload.periodEnd,
+        text: payload.text,
+        telegramMessageId: payload.telegramMessageId,
+        revision: 2,
+      };
+    },
+  } as unknown as AionApiClient;
+  const bot = testBot(userId, apiCalls);
+  registerReportHandlers(bot, apiClient);
+
+  await command.handle(
+    {
+      from: { id: userId, is_bot: false, first_name: 'Test', username: 'tester' },
+      api: bot.api,
+      reply: async (text: string, options: object) => {
+        await bot.api.sendMessage(userId, text, options);
+        return {
+          message_id: messageId,
+          date: 0,
+          chat: { id: userId, type: 'private', first_name: 'Test' },
+          text,
+        };
+      },
+    } as never,
+    [],
+  );
+
+  await callback(bot, userId, messageId, 1, 'report:menu:history');
+  await callback(bot, userId, messageId, 2, `report:history:item:${report.id}`);
+  await callback(bot, userId, messageId, 3, 'report:history:move-date');
+  await callback(bot, userId, messageId, 4, 'report:move-date:quick:2026-08-03');
+
+  assert.equal(movePayloads[0]?.type, 'weekly');
+  assert.equal(movePayloads[0]?.periodStart, '2026-08-01');
+  assert.equal(movePayloads[0]?.periodEnd, '2026-08-07');
+  assert.match(movePayloads[0]?.text ?? '', /<b>Неделя 1<\/b>/);
+  const finalPanel = [...apiCalls]
+    .reverse()
+    .find(call => call.method === 'editMessageText' && call.payload.message_id === messageId);
+  assert.match(String(finalPanel?.payload.text), /01\.08\.2026 — 07\.08\.2026/);
 });
 
 function countMethod(
@@ -242,6 +316,30 @@ function editableDailyReport(userId: number): v1.EditableTelegramReportDto {
     configuration: [field('summary', 'Итог дня', 'text')],
     revision: 1,
     telegramMessageId: '77',
+  };
+}
+
+function editableWeeklyReport(userId: number): v1.EditableTelegramReportDto {
+  return {
+    id: 'weeklyreport1',
+    telegramUserId: String(userId),
+    type: 'weekly',
+    periodStart: '2026-08-08',
+    periodEnd: '2026-08-14',
+    text: '<b>Неделя 2</b>',
+    createdAt: '2026-08-14T20:00:00.000Z',
+    sentAt: '2026-08-14T20:00:01.000Z',
+    answers: {
+      summary: {
+        text: 'Сохранённый итог недели',
+        items: [],
+        rating: null,
+        boolean: null,
+      },
+    },
+    configuration: [field('summary', 'Итог недели', 'text')],
+    revision: 1,
+    telegramMessageId: '78',
   };
 }
 
