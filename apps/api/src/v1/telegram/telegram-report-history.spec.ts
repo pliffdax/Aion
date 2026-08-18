@@ -244,6 +244,80 @@ test('rejects moving a daily report onto an occupied date', async () => {
   assert.equal(database.reports[1]?.periodStart.toISOString().slice(0, 10), '2026-08-03');
 });
 
+test('moves a sent weekly report to another anchored report week', async () => {
+  const database = createReportDatabase();
+  const service = new TelegramService(database.client as never);
+  const claim = await service.claimReportDelivery({
+    telegramUserId: '123',
+    type: 'weekly',
+    periodStart: '2026-08-08',
+    periodEnd: '2026-08-14',
+    text: '<b>Неделя 2</b>',
+  });
+  assert.equal(claim.outcome, 'claimed');
+  await service.completeReportDelivery({
+    reportId: claim.reportId,
+    deliveryToken: claim.deliveryToken,
+    telegramMessageId: '78',
+  });
+
+  const moved = await service.moveReportPeriod({
+    telegramUserId: '123',
+    reportId: claim.reportId,
+    expectedRevision: 1,
+    type: 'weekly',
+    periodStart: '2026-08-01',
+    periodEnd: '2026-08-07',
+    text: '<b>Неделя 1</b>',
+    telegramMessageId: '78',
+  });
+
+  assert.equal(moved.periodStart, '2026-08-01');
+  assert.equal(moved.periodEnd, '2026-08-07');
+  assert.equal(moved.revision, 2);
+  assert.equal(moved.text, '<b>Неделя 1</b>');
+  assert.equal(database.revisions[0]?.text, '<b>Неделя 2</b>');
+});
+
+test('rejects moving a weekly report onto an occupied report week', async () => {
+  const database = createReportDatabase();
+  const service = new TelegramService(database.client as never);
+
+  for (const period of [
+    { start: '2026-08-01', end: '2026-08-07' },
+    { start: '2026-08-08', end: '2026-08-14' },
+  ]) {
+    const claim = await service.claimReportDelivery({
+      telegramUserId: '123',
+      type: 'weekly',
+      periodStart: period.start,
+      periodEnd: period.end,
+      text: period.start,
+    });
+    assert.equal(claim.outcome, 'claimed');
+    await service.completeReportDelivery({
+      reportId: claim.reportId,
+      deliveryToken: claim.deliveryToken,
+      telegramMessageId: period.start === '2026-08-01' ? '77' : '78',
+    });
+  }
+
+  await assert.rejects(
+    service.moveReportPeriod({
+      telegramUserId: '123',
+      reportId: database.reports[1]!.id,
+      expectedRevision: 1,
+      type: 'weekly',
+      periodStart: '2026-08-01',
+      periodEnd: '2026-08-07',
+      text: 'Moved',
+      telegramMessageId: '78',
+    }),
+    ConflictException,
+  );
+  assert.equal(database.reports[1]?.periodStart.toISOString().slice(0, 10), '2026-08-08');
+});
+
 function createReportDatabase() {
   const user = {
     id: 'user-1',
@@ -252,7 +326,7 @@ function createReportDatabase() {
     firstName: null,
     locale: 'RU',
     reportAuthorName: null,
-    reportStartDate: null,
+    reportStartDate: new Date('2026-08-01T00:00:00.000Z'),
     reportDailySections: [],
     reportWeeklySections: [],
   };

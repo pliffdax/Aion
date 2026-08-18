@@ -125,8 +125,13 @@ export function buildReportHistoryItemKeyboard(
       .row();
   }
 
-  if (type === 'daily') {
-    keyboard.text(translate(locale, 'report.moveDate'), 'report:history:move-date').row();
+  if (type !== 'weekly_statistics') {
+    keyboard
+      .text(
+        translate(locale, type === 'daily' ? 'report.moveDate' : 'report.moveWeek'),
+        'report:history:move-date',
+      )
+      .row();
   }
 
   return keyboard
@@ -194,8 +199,13 @@ function addExistingReportActions(
     .text(translate(locale, 'report.existingRefill'), 'report:existing:refill')
     .row();
 
-  if (type === 'daily') {
-    keyboard.text(translate(locale, 'report.moveDate'), 'report:existing:move-date').row();
+  if (type !== 'weekly_statistics') {
+    keyboard
+      .text(
+        translate(locale, type === 'daily' ? 'report.moveDate' : 'report.moveWeek'),
+        'report:existing:move-date',
+      )
+      .row();
   }
 
   return keyboard;

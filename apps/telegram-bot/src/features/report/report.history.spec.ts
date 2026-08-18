@@ -44,6 +44,13 @@ test('report menu and history keyboards provide complete forward and back naviga
     'report:history:list',
     'report:setup:cancel',
   ]);
+  assert.deepEqual(callbacks(buildReportHistoryItemKeyboard('ru', 'weekly')), [
+    'report:history:edit',
+    'report:history:refill',
+    'report:history:move-date',
+    'report:history:list',
+    'report:setup:cancel',
+  ]);
   assert.deepEqual(callbacks(buildReportHistoryItemKeyboard('ru', 'weekly_statistics')), [
     'report:history:list',
     'report:setup:cancel',
@@ -56,7 +63,7 @@ test('history makes the migration boundary and selected filter explicit', () => 
   assert.match(renderReportHistory('ru', 'weekly_statistics', []), /автоматические снимки/);
 });
 
-test('existing daily report menu exposes open, edit, refill, and date move actions', () => {
+test('editable report menus expose open, edit, refill, and period move actions', () => {
   const editableReport: v1.EditableTelegramReportDto = {
     ...dailyReport,
     answers: null,
@@ -82,7 +89,7 @@ test('existing daily report menu exposes open, edit, refill, and date move actio
   ]);
   assert.equal(
     callbacks(buildExistingReportKeyboard('ru', 'weekly')).includes('report:existing:move-date'),
-    false,
+    true,
   );
   assert.match(renderExistingReportMenu('ru', editableReport), /Отчёт уже создан/);
 });
@@ -98,6 +105,32 @@ test('report history contracts validate exact periods, pagination, and claim out
       telegramMessageId: '77',
     }).success,
     true,
+  );
+  assert.equal(
+    v1.MoveTelegramReportPeriodDtoSchema.safeParse({
+      telegramUserId: '123',
+      reportId: 'report-1',
+      expectedRevision: 1,
+      type: 'weekly',
+      periodStart: '2026-08-02',
+      periodEnd: '2026-08-08',
+      text: 'Moved weekly report',
+      telegramMessageId: '77',
+    }).success,
+    true,
+  );
+  assert.equal(
+    v1.MoveTelegramReportPeriodDtoSchema.safeParse({
+      telegramUserId: '123',
+      reportId: 'report-1',
+      expectedRevision: 1,
+      type: 'weekly',
+      periodStart: '2026-08-02',
+      periodEnd: '2026-08-07',
+      text: 'Invalid weekly report',
+      telegramMessageId: '77',
+    }).success,
+    false,
   );
   assert.equal(
     v1.ClaimTelegramReportDeliveryDtoSchema.safeParse({

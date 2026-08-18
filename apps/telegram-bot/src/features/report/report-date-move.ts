@@ -7,19 +7,20 @@ import {
   formatDateKeyInput,
   shiftDateKey,
 } from '../../core/time/kyiv-calendar.js';
-import { calculateReportCalendar, formatDailyReport } from './report.formatter.js';
+import {
+  calculateReportCalendar,
+  calculateReportPeriod,
+  formatDailyReport,
+  formatWeeklyReport,
+  type ReportCalendar,
+  type ReportPeriod,
+} from './report.formatter.js';
 import type { ReportSession } from './report.session.js';
 import { buildExistingReportKeyboard, renderExistingReportMenu } from './report.view.js';
 
 export function startMovingReportDate(session: ReportSession): boolean {
   const report = session.existingReport;
-  if (
-    !report ||
-    report.type !== 'daily' ||
-    !report.answers ||
-    !report.configuration ||
-    session.replaceMode
-  ) {
+  if (!isMovableReport(report) || !report.answers || !report.configuration || session.replaceMode) {
     return false;
   }
 
@@ -33,9 +34,11 @@ export async function showReportDateMove(
   error?: string,
 ): Promise<void> {
   const report = session.existingReport;
-  if (!report || report.type !== 'daily') throw new Error('A daily report is required to move');
+  if (!isMovableReport(report)) {
+    throw new Error('An editable report is required to move');
+  }
   const locale = getLocale(session.userId);
-  const prompt = renderReportDateMovePrompt(locale, report.periodStart);
+  const prompt = renderReportDateMovePrompt(locale, report);
 
   await telegramApi.editMessageText(
     session.collector.chatId,
@@ -43,42 +46,44 @@ export async function showReportDateMove(
     error ? `${error}\n\n${prompt}` : prompt,
     {
       parse_mode: 'HTML',
-      reply_markup: buildReportDateMoveKeyboard(locale, report.periodStart),
+      reply_markup: buildReportDateMoveKeyboard(locale, report, session.startDate),
     },
   );
 }
 
-export async function moveDailyReportToDate(
+export async function moveReportToDate(
   telegramApi: TelegramApi,
   apiClient: AionApiClient,
   session: ReportSession,
   targetDate: string,
 ): Promise<boolean> {
-  const existing = movableDailyReport(session);
+  const existing = movableReport(session);
   if (!existing) return false;
 
-  const targetError = await reportMoveTargetError(apiClient, session, existing.id, targetDate);
+  const target = resolveReportMoveTarget(session, existing.type, targetDate);
+  if (typeof target === 'string') {
+    await showReportDateMove(telegramApi, session, target);
+    return false;
+  }
+
+  const targetError = await reportMoveTargetError(apiClient, session, existing, target);
   if (targetError) {
     await showReportDateMove(telegramApi, session, targetError);
     return false;
   }
 
   const locale = getLocale(session.userId);
-  const calendar = calculateReportCalendar(targetDate, session.startDate);
-  const text = formatDailyReport(
-    existing.answers,
-    calendar,
-    session.authorTag,
-    existing.configuration,
-  );
+  const text = formatMovedReport(existing, target.calendar, session.authorTag);
   const messageUpdate = await updateReportMessage(telegramApi, session, existing, text);
 
   let moved: v1.EditableTelegramReportDto;
   try {
-    moved = await apiClient.moveDailyReport(session.userId, {
+    moved = await apiClient.moveReportPeriod(session.userId, {
       reportId: existing.id,
       expectedRevision: existing.revision,
-      targetDate,
+      type: existing.type,
+      periodStart: target.period.periodStart,
+      periodEnd: target.period.periodEnd,
       text,
       telegramMessageId: String(messageUpdate.messageId),
     });
@@ -87,12 +92,15 @@ export async function moveDailyReportToDate(
     await showReportDateMove(
       telegramApi,
       session,
-      translate(locale, isApiConflict(error) ? 'report.moveDateConflict' : 'report.moveDateFailed'),
+      translate(
+        locale,
+        isApiConflict(error) ? reportMoveConflictKey(existing.type) : 'report.moveDateFailed',
+      ),
     );
     return false;
   }
 
-  await completeReportDateMove(telegramApi, session, moved, calendar, messageUpdate);
+  await completeReportDateMove(telegramApi, session, moved, target.calendar, messageUpdate);
   return true;
 }
 
@@ -164,7 +172,7 @@ async function completeReportDateMove(
   telegramApi: TelegramApi,
   session: ReportSession,
   moved: v1.EditableTelegramReportDto,
-  calendar: ReturnType<typeof calculateReportCalendar>,
+  calendar: ReportCalendar,
   messageUpdate: ReportMessageUpdate,
 ): Promise<void> {
   await removeReplacedReportMessage(telegramApi, session, messageUpdate);
@@ -183,9 +191,9 @@ async function completeReportDateMove(
   );
 }
 
-function movableDailyReport(session: ReportSession):
+function movableReport(session: ReportSession):
   | (v1.EditableTelegramReportDto & {
-      type: 'daily';
+      type: 'daily' | 'weekly';
       answers: v1.TelegramReportAnswers;
       configuration: v1.TelegramReportField[];
     })
@@ -193,8 +201,7 @@ function movableDailyReport(session: ReportSession):
   const report = session.existingReport;
   if (
     !session.movingReportDate ||
-    !report ||
-    report.type !== 'daily' ||
+    !isMovableReport(report) ||
     !report.answers ||
     !report.configuration
   ) {
@@ -202,65 +209,104 @@ function movableDailyReport(session: ReportSession):
   }
   return {
     ...report,
-    type: 'daily',
+    type: report.type,
     answers: report.answers,
     configuration: report.configuration,
   };
 }
 
-function reportDateMoveValidationError(session: ReportSession, targetDate: string): string | null {
+interface ReportMoveTarget {
+  calendar: ReportCalendar;
+  period: ReportPeriod;
+}
+
+function resolveReportMoveTarget(
+  session: ReportSession,
+  type: 'daily' | 'weekly',
+  targetDate: string,
+): ReportMoveTarget | string {
   const locale = getLocale(session.userId);
-  if (targetDate === session.existingReport?.periodStart) {
-    return translate(locale, 'report.moveDateSame');
-  }
-  if (targetDate > currentKyivDateKey()) return translate(locale, 'report.moveDateFuture');
   if (targetDate < session.startDate) return translate(locale, 'report.moveDateBeforeStart');
-  return null;
+
+  const calendar = calculateReportCalendar(targetDate, session.startDate);
+  const period = calculateReportPeriod(type, calendar, session.startDate);
+  if (isCurrentReportPeriod(session, period)) {
+    return translate(locale, reportMoveSameKey(type));
+  }
+
+  const currentCalendar = calculateReportCalendar(currentKyivDateKey(), session.startDate);
+  const currentPeriod = calculateReportPeriod(type, currentCalendar, session.startDate);
+  if (period.periodStart > currentPeriod.periodStart) {
+    return translate(locale, reportMoveFutureKey(type));
+  }
+  return { calendar, period };
 }
 
 async function reportMoveTargetError(
   apiClient: AionApiClient,
   session: ReportSession,
-  sourceReportId: string,
-  targetDate: string,
+  sourceReport: v1.EditableTelegramReportDto & { type: 'daily' | 'weekly' },
+  target: ReportMoveTarget,
 ): Promise<string | null> {
-  const validationError = reportDateMoveValidationError(session, targetDate);
-  if (validationError) return validationError;
-
   const targetReport = await apiClient
     .findEditableReport(session.userId, {
-      type: 'daily',
-      periodStart: targetDate,
-      periodEnd: targetDate,
+      type: sourceReport.type,
+      periodStart: target.period.periodStart,
+      periodEnd: target.period.periodEnd,
     })
     .catch(() => undefined);
   if (targetReport === undefined) {
     return translate(getLocale(session.userId), 'report.moveDateFailed');
   }
-  return targetReport && targetReport.id !== sourceReportId
-    ? translate(getLocale(session.userId), 'report.moveDateConflict')
+  return targetReport && targetReport.id !== sourceReport.id
+    ? translate(getLocale(session.userId), reportMoveConflictKey(sourceReport.type))
     : null;
 }
 
-function renderReportDateMovePrompt(locale: Locale, sourceDate: string): string {
+function renderReportDateMovePrompt(
+  locale: Locale,
+  report: v1.EditableTelegramReportDto & { type: 'daily' | 'weekly' },
+): string {
+  const weekly = report.type === 'weekly';
   return [
-    translate(locale, 'report.moveDateTitle'),
+    translate(locale, weekly ? 'report.moveWeekTitle' : 'report.moveDateTitle'),
     '',
-    translate(locale, 'report.moveDateSource', { date: formatReportDate(sourceDate) }),
+    weekly
+      ? translate(locale, 'report.moveWeekSource', {
+          start: formatReportDate(report.periodStart),
+          end: formatReportDate(report.periodEnd),
+        })
+      : translate(locale, 'report.moveDateSource', { date: formatReportDate(report.periodStart) }),
     '',
-    translate(locale, 'report.moveDatePrompt', {
+    translate(locale, weekly ? 'report.moveWeekPrompt' : 'report.moveDatePrompt', {
       example: formatDateKeyInput(shiftDateKey(currentKyivDateKey(), -1)),
     }),
   ].join('\n');
 }
 
-function buildReportDateMoveKeyboard(locale: Locale, sourceDate: string): InlineKeyboard {
+function buildReportDateMoveKeyboard(
+  locale: Locale,
+  report: v1.EditableTelegramReportDto & { type: 'daily' | 'weekly' },
+  startDate: string,
+): InlineKeyboard {
   const today = currentKyivDateKey();
   const keyboard = new InlineKeyboard();
-  const quickDates = [
-    { label: translate(locale, 'report.yesterday'), date: shiftDateKey(today, -1) },
-    { label: translate(locale, 'daily.today'), date: today },
-  ].filter(candidate => candidate.date !== sourceDate);
+  const quickDates = (
+    report.type === 'daily'
+      ? [
+          { label: translate(locale, 'report.yesterday'), date: shiftDateKey(today, -1) },
+          { label: translate(locale, 'daily.today'), date: today },
+        ]
+      : [
+          { label: translate(locale, 'report.previousWeek'), date: shiftDateKey(today, -7) },
+          { label: translate(locale, 'report.currentWeek'), date: today },
+        ]
+  ).filter(candidate => {
+    if (candidate.date < startDate) return false;
+    const calendar = calculateReportCalendar(candidate.date, startDate);
+    const period = calculateReportPeriod(report.type, calendar, startDate);
+    return period.periodStart !== report.periodStart || period.periodEnd !== report.periodEnd;
+  });
 
   for (const candidate of quickDates) {
     keyboard.text(candidate.label, `report:move-date:quick:${candidate.date}`).row();
@@ -271,7 +317,12 @@ function buildReportDateMoveKeyboard(locale: Locale, sourceDate: string): Inline
 
 function renderMovedReportMenu(locale: Locale, report: v1.EditableTelegramReportDto): string {
   return [
-    translate(locale, 'report.moveDateSuccess', { date: formatReportDate(report.periodStart) }),
+    report.type === 'weekly'
+      ? translate(locale, 'report.moveWeekSuccess', {
+          start: formatReportDate(report.periodStart),
+          end: formatReportDate(report.periodEnd),
+        })
+      : translate(locale, 'report.moveDateSuccess', { date: formatReportDate(report.periodStart) }),
     '',
     renderExistingReportMenu(locale, report),
   ].join('\n');
@@ -283,4 +334,42 @@ function formatReportDate(date: string): string {
 
 function isApiConflict(error: unknown): boolean {
   return error instanceof Error && error.message.includes('failed with 409');
+}
+
+function formatMovedReport(
+  report: NonNullable<ReturnType<typeof movableReport>>,
+  calendar: ReportCalendar,
+  authorTag: string,
+): string {
+  const formatter = report.type === 'daily' ? formatDailyReport : formatWeeklyReport;
+  return formatter(report.answers, calendar, authorTag, report.configuration);
+}
+
+function isCurrentReportPeriod(session: ReportSession, period: ReportPeriod): boolean {
+  const current = session.existingReport;
+  return current?.periodStart === period.periodStart && current.periodEnd === period.periodEnd;
+}
+
+function reportMoveSameKey(
+  type: 'daily' | 'weekly',
+): 'report.moveDateSame' | 'report.moveWeekSame' {
+  return type === 'daily' ? 'report.moveDateSame' : 'report.moveWeekSame';
+}
+
+function reportMoveFutureKey(
+  type: 'daily' | 'weekly',
+): 'report.moveDateFuture' | 'report.moveWeekFuture' {
+  return type === 'daily' ? 'report.moveDateFuture' : 'report.moveWeekFuture';
+}
+
+function reportMoveConflictKey(
+  type: 'daily' | 'weekly',
+): 'report.moveDateConflict' | 'report.moveWeekConflict' {
+  return type === 'daily' ? 'report.moveDateConflict' : 'report.moveWeekConflict';
+}
+
+function isMovableReport(
+  report: v1.EditableTelegramReportDto | null,
+): report is v1.EditableTelegramReportDto & { type: 'daily' | 'weekly' } {
+  return report !== null && report.type !== 'weekly_statistics';
 }
