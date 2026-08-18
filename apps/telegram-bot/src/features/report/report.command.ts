@@ -28,11 +28,7 @@ import {
   formatWeeklyReport,
   type ReportItem,
 } from './report.formatter.js';
-import {
-  moveDailyReportToDate,
-  showReportDateMove,
-  startMovingReportDate,
-} from './report-date-move.js';
+import { moveReportToDate, showReportDateMove, startMovingReportDate } from './report-date-move.js';
 import {
   advanceReportStep,
   copyReportField,
@@ -803,7 +799,7 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
     if (!session?.movingReportDate) return;
 
     await context.answerCallbackQuery();
-    const moved = await moveDailyReportToDate(context.api, apiClient, session, context.match[1]);
+    const moved = await moveReportToDate(context.api, apiClient, session, context.match[1]);
     if (moved) releaseTextInput(session.userId, 'report');
   });
 
@@ -1033,7 +1029,7 @@ export function registerReportHandlers(bot: Bot, apiClient: AionApiClient): void
         return;
       }
 
-      const moved = await moveDailyReportToDate(context.api, apiClient, session, targetDate);
+      const moved = await moveReportToDate(context.api, apiClient, session, targetDate);
       if (moved) releaseTextInput(session.userId, 'report');
       return;
     }

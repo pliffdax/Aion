@@ -375,14 +375,15 @@ const translations = {
     '{type}: <code>{start} — {end}</code>',
   ],
   'report.existingHint': [
-    'Можно открыть его, изменить сохранённые ответы или заполнить заново.',
-    'Можна відкрити його, змінити збережені відповіді або заповнити заново.',
-    'You can open it, edit the saved answers, or fill it in again.',
+    'Можно открыть его, изменить сохранённые ответы, заполнить заново или перенести.',
+    'Можна відкрити його, змінити збережені відповіді, заповнити заново або перенести.',
+    'You can open it, edit the saved answers, fill it in again, or move it.',
   ],
   'report.existingOpen': ['📄 Открыть', '📄 Відкрити', '📄 Open'],
   'report.existingEdit': ['✏️ Редактировать', '✏️ Редагувати', '✏️ Edit'],
   'report.existingRefill': ['🔄 Заполнить заново', '🔄 Заповнити заново', '🔄 Fill again'],
   'report.moveDate': ['📅 Перенести дату', '📅 Перенести дату', '📅 Move date'],
+  'report.moveWeek': ['📅 Перенести неделю', '📅 Перенести тиждень', '📅 Move week'],
   'report.moveDateTitle': [
     '<b>Перенести дневной отчёт</b>',
     '<b>Перенести денний звіт</b>',
@@ -399,15 +400,42 @@ const translations = {
     'Choose a date or send it as <code>DD.MM.YYYY</code>, for example <code>{example}</code>.',
   ],
   'report.yesterday': ['Вчера', 'Учора', 'Yesterday'],
+  'report.previousWeek': ['Прошлая неделя', 'Минулий тиждень', 'Previous week'],
+  'report.currentWeek': ['Текущая неделя', 'Поточний тиждень', 'Current week'],
+  'report.moveWeekTitle': [
+    '<b>Перенести недельный отчёт</b>',
+    '<b>Перенести тижневий звіт</b>',
+    '<b>Move weekly report</b>',
+  ],
+  'report.moveWeekSource': [
+    'Текущая неделя: <code>{start} — {end}</code>',
+    'Поточний тиждень: <code>{start} — {end}</code>',
+    'Current week: <code>{start} — {end}</code>',
+  ],
+  'report.moveWeekPrompt': [
+    'Выберите неделю или отправьте любую дату внутри нужной недели в формате <code>ДД.ММ.ГГГГ</code>, например <code>{example}</code>.',
+    'Оберіть тиждень або надішліть будь-яку дату в межах потрібного тижня у форматі <code>ДД.ММ.РРРР</code>, наприклад <code>{example}</code>.',
+    'Choose a week or send any date within the target week as <code>DD.MM.YYYY</code>, for example <code>{example}</code>.',
+  ],
   'report.moveDateSame': [
     'Отчёт уже находится на этой дате.',
     'Звіт уже знаходиться на цій даті.',
     'The report already belongs to this date.',
   ],
+  'report.moveWeekSame': [
+    'Отчёт уже находится на этой неделе.',
+    'Звіт уже знаходиться на цьому тижні.',
+    'The report already belongs to this week.',
+  ],
   'report.moveDateFuture': [
     'Отчёт нельзя перенести в будущий день.',
     'Звіт не можна перенести в майбутній день.',
     'A report cannot be moved to a future date.',
+  ],
+  'report.moveWeekFuture': [
+    'Отчёт нельзя перенести в будущую отчётную неделю.',
+    'Звіт не можна перенести в майбутній звітний тиждень.',
+    'A report cannot be moved to a future reporting week.',
   ],
   'report.moveDateBeforeStart': [
     'Дата не может быть раньше начала отсчёта отчётов.',
@@ -424,6 +452,11 @@ const translations = {
     'На цю дату вже існує денний звіт. Спочатку змініть або перенесіть його.',
     'A daily report already exists for this date. Edit or move it first.',
   ],
+  'report.moveWeekConflict': [
+    'На эту неделю уже существует недельный отчёт. Сначала измените или перенесите его.',
+    'На цей тиждень уже існує тижневий звіт. Спочатку змініть або перенесіть його.',
+    'A weekly report already exists for this week. Edit or move it first.',
+  ],
   'report.moveDateFailed': [
     'Не удалось перенести отчёт. Откройте его заново и повторите попытку.',
     'Не вдалося перенести звіт. Відкрийте його знову й повторіть спробу.',
@@ -433,6 +466,11 @@ const translations = {
     '<b>Отчёт перенесён на {date}</b>',
     '<b>Звіт перенесено на {date}</b>',
     '<b>Report moved to {date}</b>',
+  ],
+  'report.moveWeekSuccess': [
+    '<b>Отчёт перенесён на неделю {start} — {end}</b>',
+    '<b>Звіт перенесено на тиждень {start} — {end}</b>',
+    '<b>Report moved to week {start} — {end}</b>',
   ],
   'report.moveDateUnavailable': [
     'Этот старый отчёт нельзя безопасно перенести: в нём не сохранены структурированные ответы.',
