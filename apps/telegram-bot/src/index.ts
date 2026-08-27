@@ -1,3 +1,4 @@
+import { rm, writeFile } from 'node:fs/promises';
 import { createBot } from './bot.js';
 import { AionApiClient } from './core/api/aion-api-client.js';
 import {
@@ -11,6 +12,9 @@ import {
 import { logInfo } from './core/logging/logger.js';
 import { startDailyPlanRollover } from './features/daily-plan/daily-plan-rollover.js';
 import { startReminderDelivery } from './features/reminder/reminder-delivery.js';
+
+const readyFile = '/tmp/aion-telegram-bot-ready';
+await rm(readyFile, { force: true });
 
 const apiClient = new AionApiClient(API_URL, API_KEY);
 const bot = await createBot(
@@ -38,7 +42,8 @@ process.once('SIGINT', () => void shutdown('SIGINT'));
 process.once('SIGTERM', () => void shutdown('SIGTERM'));
 
 await bot.start({
-  onStart: ({ username }) => {
+  onStart: async ({ username }) => {
+    await writeFile(readyFile, `${new Date().toISOString()}\n`);
     logInfo('telegram.bot.started', {
       username,
       accessMode: TELEGRAM_ACCESS_RESTRICTED ? 'restricted' : 'public',
