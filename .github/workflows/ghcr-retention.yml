@@ -1,0 +1,147 @@
+name: GHCR retention
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_delete:
+        description: Delete the versions listed in the job summary
+        required: true
+        type: boolean
+        default: false
+      versions_to_keep:
+        description: Recent tagged SHA versions to keep per package
+        required: true
+        type: number
+        default: 20
+      minimum_age_days:
+        description: Minimum age of a version before deletion
+        required: true
+        type: number
+        default: 30
+      additional_protected_shas:
+        description: Space-separated deployed SHAs to preserve in addition to branch tips
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: aion-ghcr-retention
+  cancel-in-progress: false
+
+jobs:
+  retain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Select and optionally delete old versions
+        uses: actions/github-script@v7
+        env:
+          CONFIRM_DELETE: ${{ inputs.confirm_delete }}
+          VERSIONS_TO_KEEP: ${{ inputs.versions_to_keep }}
+          MINIMUM_AGE_DAYS: ${{ inputs.minimum_age_days }}
+          ADDITIONAL_PROTECTED_SHAS: ${{ inputs.additional_protected_shas }}
+        with:
+          script: |
+            const keepCount = Number(process.env.VERSIONS_TO_KEEP);
+            const minimumAgeDays = Number(process.env.MINIMUM_AGE_DAYS);
+            const confirmDelete = process.env.CONFIRM_DELETE === 'true';
+
+            if (!Number.isInteger(keepCount) || keepCount < 5) {
+              core.setFailed('versions_to_keep must be an integer of at least 5');
+              return;
+            }
+            if (!Number.isInteger(minimumAgeDays) || minimumAgeDays < 7) {
+              core.setFailed('minimum_age_days must be an integer of at least 7');
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const packageNames = ['aion-api', 'aion-telegram-bot'];
+            const protectedShas = new Set(
+              (process.env.ADDITIONAL_PROTECTED_SHAS ?? '')
+                .split(/\s+/)
+                .filter(Boolean),
+            );
+
+            for (const sha of protectedShas) {
+              if (!/^[0-9a-f]{40}$/.test(sha)) {
+                core.setFailed(`Invalid additional protected SHA: ${sha}`);
+                return;
+              }
+            }
+
+            for (const branch of ['main', 'development']) {
+              const response = await github.rest.repos.getBranch({
+                owner,
+                repo: context.repo.repo,
+                branch,
+              });
+              protectedShas.add(response.data.commit.sha);
+            }
+
+            const cutoff = Date.now() - minimumAgeDays * 24 * 60 * 60 * 1000;
+            const summary = core.summary
+              .addHeading('GHCR retention')
+              .addRaw(`Mode: ${confirmDelete ? 'delete' : 'dry run'}\n\n`)
+              .addRaw(`Protected branch SHAs: ${[...protectedShas].join(', ')}\n\n`);
+
+            for (const packageName of packageNames) {
+              const versions = await github.paginate(
+                github.rest.packages.getAllPackageVersionsForPackageOwnedByUser,
+                {
+                  package_type: 'container',
+                  package_name: packageName,
+                  username: owner,
+                  per_page: 100,
+                },
+              );
+
+              const taggedShaVersions = versions
+                .map(version => ({
+                  ...version,
+                  tags: version.metadata?.container?.tags ?? [],
+                }))
+                .filter(version => version.tags.some(tag => /^[0-9a-f]{40}$/.test(tag)))
+                .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+
+              const candidates = taggedShaVersions.slice(keepCount).filter(version => {
+                const protectedTag = version.tags.some(
+                  tag => protectedShas.has(tag) || !/^[0-9a-f]{40}$/.test(tag),
+                );
+                return !protectedTag && Date.parse(version.created_at) < cutoff;
+              });
+
+              summary.addHeading(packageName, 2);
+              if (candidates.length === 0) {
+                summary.addRaw('No versions qualify.\n\n');
+                continue;
+              }
+
+              summary.addTable([
+                [
+                  { data: 'Version id', header: true },
+                  { data: 'Created', header: true },
+                  { data: 'Tags', header: true },
+                ],
+                ...candidates.map(version => [
+                  String(version.id),
+                  version.created_at,
+                  version.tags.join(', '),
+                ]),
+              ]);
+
+              if (confirmDelete) {
+                for (const version of candidates) {
+                  await github.rest.packages.deletePackageVersionForUser({
+                    package_type: 'container',
+                    package_name: packageName,
+                    username: owner,
+                    package_version_id: version.id,
+                  });
+                }
+              }
+            }
+
+            await summary.write();

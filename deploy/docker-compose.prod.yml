@@ -1,9 +1,17 @@
 name: ${AION_COMPOSE_PROJECT:-aion}
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
 services:
   postgres:
-    image: postgres:16
+    image: postgres:16@sha256:e17e86066e5ef83e0952a9347f5c792b7ece00972e2aa787a6986f471b3dd3d5
+    pull_policy: missing
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: aion
       POSTGRES_PASSWORD: ${AION_POSTGRES_PASSWORD:?AION_POSTGRES_PASSWORD is required}
@@ -21,6 +29,7 @@ services:
   api:
     image: ghcr.io/pliffdax/aion-api:${AION_IMAGE_TAG:-latest}
     restart: unless-stopped
+    logging: *default-logging
     env_file:
       - ${AION_SHARED_DIR:-/srv/aion/shared}/api.env
     ports:
@@ -43,11 +52,24 @@ services:
   telegram-bot:
     image: ghcr.io/pliffdax/aion-telegram-bot:${AION_IMAGE_TAG:-latest}
     restart: unless-stopped
+    logging: *default-logging
     env_file:
       - ${AION_SHARED_DIR:-/srv/aion/shared}/telegram-bot.env
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('node:fs').accessSync('/tmp/aion-telegram-bot-ready');process.kill(1,0)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
 volumes:
   pg_data:
